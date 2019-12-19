@@ -213,7 +213,8 @@ let collect_reserved_local_names com =
 		!h
 	| _ -> StringMap.empty
 
-let rename_local_vars ctx reserved e =
+let rec rename_local_vars ctx reserved e =
+	let initial_reserved = reserved in
 	let vars = ref [] in
 	let declare v =
 		vars := v :: !vars
@@ -234,6 +235,7 @@ let rename_local_vars ctx reserved e =
 		| TAbstract (a,_) -> check (TAbstractDecl a)
 		| TMono _ | TLazy _ | TAnon _ | TDynamic _ | TFun _ -> ()
 	in
+	let funcs = ref [] in
 	let rec collect e = match e.eexpr with
  		| TVar(v,eo) ->
 			declare v;
@@ -250,8 +252,7 @@ let rename_local_vars ctx reserved e =
 				collect e
 			) catches
 		| TFunction tf ->
-			List.iter (fun (v,_) -> declare v) tf.tf_args;
-			collect tf.tf_expr
+			funcs := tf :: !funcs;
 		| TTypeExpr t ->
 			check t
 		| TNew (c,_,_) ->
@@ -290,6 +291,13 @@ let rename_local_vars ctx reserved e =
 		v.v_name <- !name;
 	in
 	List.iter maybe_rename (List.rev !vars);
+	List.iter (fun tf ->
+		reserved := initial_reserved;
+		List.iter (fun (v,_) ->
+			maybe_rename v;
+		) tf.tf_args;
+		ignore(rename_local_vars ctx !reserved tf.tf_expr);
+	) !funcs;
 	e
 
 let mark_switch_break_loops e =
