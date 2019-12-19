@@ -79,6 +79,14 @@ type capture_policy =
 	(** similar to wrap ref, but will only apply to the locals that are declared in loops *)
 	| CPLoopVars
 
+type nested_function_scoping =
+	(** each TFunction has its own scope in the output **)
+	| Independent
+	(** TFunction nodes are nested in the output **)
+	| Nested
+	(** TFunction nodes are nested in the output and there is var hoisting **)
+	| JsLike
+
 type platform_config = {
 	(** has a static type system, with not-nullable basic types (Int/Float/Bool) *)
 	pf_static : bool;
@@ -106,6 +114,8 @@ type platform_config = {
 	pf_supports_threads : bool;
 	(** target supports Unicode **)
 	pf_supports_unicode : bool;
+	(** the scoping behavior of nested functions **)
+	pf_nested_function_scoping : nested_function_scoping;
 }
 
 class compiler_callbacks = object(self)
@@ -322,6 +332,7 @@ let default_config =
 		pf_this_before_super = true;
 		pf_supports_threads = false;
 		pf_supports_unicode = true;
+		pf_nested_function_scoping = Independent;
 	}
 
 let get_config com =
@@ -337,6 +348,7 @@ let get_config com =
 			pf_capture_policy = CPLoopVars;
 			pf_reserved_type_paths = [([],"Object");([],"Error")];
 			pf_this_before_super = (get_es_version com) < 6; (* cannot access `this` before `super()` when generating ES6 classes *)
+			pf_nested_function_scoping = JsLike;
 		}
 	| Lua ->
 		{
@@ -400,6 +412,7 @@ let get_config com =
 			pf_static = false;
 			pf_capture_policy = CPLoopVars;
 			pf_uses_utf16 = false;
+			pf_nested_function_scoping = Nested;
 		}
 	| Hl ->
 		{
