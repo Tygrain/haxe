@@ -405,17 +405,9 @@ let init_module_type ctx context_init (decl,p) =
 	let get_type name =
 		try List.find (fun t -> snd (t_infos t).mt_path = name) ctx.m.curmod.m_types with Not_found -> assert false
 	in
-	let check_path_display path p = match !Parser.display_mode with
-		(* We cannot use ctx.is_display_file because the import could come from an import.hx file. *)
-		| DMDiagnostics b when (b || DisplayPosition.display_position#is_in_file p.pfile) && Filename.basename p.pfile <> "import.hx" ->
-			ImportHandling.add_import_position ctx p path;
-		| DMStatistics ->
-			ImportHandling.add_import_position ctx p path;
-		| DMUsage _ ->
-			ImportHandling.add_import_position ctx p path;
-			if DisplayPosition.display_position#is_in_file p.pfile then DisplayPath.handle_path_display ctx path p
-		| _ ->
-			if DisplayPosition.display_position#is_in_file p.pfile then DisplayPath.handle_path_display ctx path p
+	let check_path_display path p =
+		if Filename.basename p.pfile <> "import.hx" then ImportHandling.add_import_position ctx p path;
+		if DisplayPosition.display_position#is_in_file p.pfile then DisplayPath.handle_path_display ctx path p
 	in
 	match decl with
 	| EImport (path,mode) ->
@@ -915,8 +907,7 @@ let handle_import_hx ctx m decls p =
 		with Not_found ->
 			if Sys.file_exists path then begin
 				let _,r = match !TypeloadParse.parse_hook ctx.com path p with
-					| ParseSuccess data -> data
-					| ParseDisplayFile(data,_) -> data
+					| ParseSuccess(data,_,_) -> data
 					| ParseError(_,(msg,p),_) -> Parser.error msg p
 				in
 				List.iter (fun (d,p) -> match d with EImport _ | EUsing _ -> () | _ -> error "Only import and using is allowed in import.hx files" p) r;

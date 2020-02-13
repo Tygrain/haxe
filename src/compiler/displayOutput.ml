@@ -391,7 +391,7 @@ let load_display_content_standalone ctx input =
 	let file = file_input_marker in
 	let p = {pfile = file; pmin = 0; pmax = 0} in
 	let parsed = TypeloadParse.parse_file_from_string com file p input in
-	let pack,decls = TypeloadParse.handle_parser_result com file p parsed in
+	let pack,decls = TypeloadParse.handle_parser_result com p parsed in
 	ignore(TypeloadModule.type_module ctx (pack,"?DISPLAY") file ~dont_check_path:true decls p)
 
 let promote_type_hints tctx =
@@ -414,10 +414,12 @@ let process_global_display_mode com tctx =
 	match com.display.dms_kind with
 	| DMUsage with_definition ->
 		FindReferences.find_references tctx com with_definition
+	| DMImplementation ->
+		FindReferences.find_implementations tctx com
 	| DMDiagnostics global ->
 		Diagnostics.run com global
 	| DMStatistics ->
-		let stats = Statistics.collect_statistics tctx (SFFile (DisplayPosition.display_position#get).pfile) in
+		let stats = Statistics.collect_statistics tctx (SFFile (DisplayPosition.display_position#get).pfile) true in
 		raise_statistics (Statistics.Printer.print_statistics stats)
 	| DMModuleSymbols (Some "") -> ()
 	| DMModuleSymbols filter ->
