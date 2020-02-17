@@ -1239,7 +1239,7 @@ and type_ident ctx i p mode =
 					match ctx.com.display.dms_kind with
 						| DMNone ->
 							raise (Error(err,p))
-						| DMDiagnostics b when b || ctx.is_display_file ->
+						| DMDiagnostics _ ->
 							DisplayToplevel.handle_unresolved_identifier ctx i p false;
 							let t = mk_mono() in
 							AKExpr (mk (TIdent i) t p)
@@ -2001,6 +2001,9 @@ and type_map_declaration ctx e1 el with_type p =
 	let el = e1 :: el in
 	let el_kv = List.map (fun e -> match fst e with
 		| EBinop(OpArrow,e1,e2) -> e1,e2
+		| EDisplay _ ->
+			ignore(type_expr ctx e (WithType.with_type tkey));
+			error "Expected a => b" (pos e)
 		| _ -> error "Expected a => b" (pos e)
 	) el in
 	let el_k,el_v,tkey,tval = if has_type then begin
