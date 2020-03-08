@@ -78,7 +78,7 @@ module NativeArray = struct
 		| TInt -> primitive 10
 		| TLong -> primitive 11
 		| TObject(path,_) -> reference path
-		| TMethod _ -> reference NativeSignatures.method_handle_path
+		| TMethod _ -> reference NativeSignatures.haxe_function_path
 		| TTypeParameter _ -> reference NativeSignatures.object_path
 		| TArray _ ->
 			let offset = pool#add_type (generate_signature false je) in
@@ -125,13 +125,11 @@ class builder jc name jsig = object(self)
 							| None -> failwith ("Uninitialized local " ^ name);
 							| Some fp -> fp
 						in
-						let ld = {
-							ld_start_pc = fp;
-							ld_length = fp_end - fp;
-							ld_name_index = jc#get_pool#add_string name;
-							ld_descriptor_index = jc#get_pool#add_string (generate_signature false t);
-							ld_index = old_offset + i - 1;
-						} in
+						let t = match t with
+							| TUninitialized None -> TObject(jc#get_this_path,[])
+							| _ -> t
+						in
+						let ld = (fp,fp_end - fp,name,t,old_offset + i - (signature_size t)) in
 						debug_locals <- ld :: debug_locals;
 						loop (i - (signature_size t)) l
 					| [] ->
@@ -301,15 +299,6 @@ class builder jc name jsig = object(self)
 			NativeArray.write code jasig jsig
 		) fl
 
-	(** Adds a closure to method [name] ob [path] with signature [jsig_method] to the constant pool.
-
-	    Also emits an instruction to load the closure.
-	**)
-	method read_closure is_static path name jsig_method =
-		let offset = code#get_pool#add_field path name jsig_method FKMethod in
-		let offset = code#get_pool#add (ConstMethodHandle((if is_static then 6 else 5), offset)) in
-		code#ldc offset jsig_method
-
 	(**
 		Emits a return instruction.
 	**)
@@ -320,7 +309,8 @@ class builder jc name jsig = object(self)
 				code#return_void
 			| Some jsig ->
 				code#return_value jsig
-			end
+			end;
+			self#set_terminated true;
 		| _ ->
 			assert false
 
@@ -375,20 +365,6 @@ class builder jc name jsig = object(self)
 			| TBool -> unwrap_null "Boolean" "toBoolean"
 			| _ -> ()
 		end
-
-	method adapt_method jsig =
-		()
-		(* let offset = code#get_pool#add_string (generate_method_signature false jsig) in
-		let offset = code#get_pool#add (ConstMethodType offset) in
-		self#get_code#dup;
-		self#if_then
-			(fun () -> self#get_code#if_null_ref jsig)
-			(fun () ->
-				code#ldc offset method_type_sig;
-				self#invokevirtual method_handle_path "asType" (method_sig [method_type_sig] (Some method_handle_sig))
-			);
-		ignore(code#get_stack#pop);
-		code#get_stack#push jsig; *)
 
 	(** Casts the top of the stack to [jsig]. If [allow_to_string] is true, Jvm.toString is called. **)
 	method cast ?(not_null=false) ?(allow_to_string=false) jsig =
@@ -570,14 +546,8 @@ class builder jc name jsig = object(self)
 				code#checkcast path1;
 		| TObject(path,_),TTypeParameter _ ->
 			code#checkcast path
-		| TMethod _,TMethod _ ->
-			if jsig <> jsig' then self#adapt_method jsig;
-		| TMethod _,TObject((["java";"lang";"invoke"],"MethodHandle"),_) ->
-			self#adapt_method jsig;
-		| TObject((["java";"lang";"invoke"],"MethodHandle"),_),TMethod _ ->
-			()
 		| TMethod _,_ ->
-			code#checkcast (["java";"lang";"invoke"],"MethodHandle");
+			code#checkcast NativeSignatures.haxe_function_path;
 		| TArray(jsig1,_),TArray(jsig2,_) when jsig1 = jsig2 ->
 			()
 		| TArray _,_ ->
@@ -666,23 +636,29 @@ class builder jc name jsig = object(self)
 
 		If [is_exhaustive] is true and [def] is None, the first case is used as the default case.
 	**)
-	method int_switch (is_exhaustive : bool) (cases : (Int32.t list * (unit -> unit)) list) (def : (unit -> unit) option) =
-		let def,cases = match def,cases with
-			| None,(_,ec) :: cases when is_exhaustive ->
-				Some ec,cases
+	method int_switch (need_val : bool) (cases : (Int32.t list * (unit -> unit)) list) (def : (unit -> unit) option) =
+		let def = match def with
+			| None when need_val ->
+				Some (fun () ->
+					self#string "Match failure";
+					self#invokestatic (["haxe";"jvm"],"Exception") "wrap" (method_sig [object_sig] (Some exception_sig));
+					self#get_code#athrow;
+					self#set_terminated true;
+				)
 			| _ ->
-				def,cases
+				def
 		in
 		let flat_cases = DynArray.create () in
 		let case_lut = ref Int32Map.empty in
 		let fp = code#get_fp in
-		let imin = ref Int32.min_int in
-		let imax = ref Int32.max_int in
+		let imin = ref Int64.max_int in
+		let imax = ref Int64.min_int in
 		let cases = List.map (fun (il,f) ->
 			let rl = List.map (fun i32 ->
 				let r = ref fp in
-				if i32 < !imin then imin := i32;
-				if i32 > !imax then imax := i32;
+				let i64 = Int64.of_int32 i32 in
+				if i64 < !imin then imin := i64;
+				if i64 > !imax then imax := i64;
 				DynArray.add flat_cases (i32,r);
 				case_lut := Int32Map.add i32 r !case_lut;
 				r
@@ -691,14 +667,19 @@ class builder jc name jsig = object(self)
 		) cases in
 		let offset_def = ref fp in
 		(* No idea what's a good heuristic here... *)
-		let diff = Int32.sub !imax !imin in
-		let use_tableswitch = diff < (Int32.of_int (DynArray.length flat_cases + 10)) && diff >= Int32.zero (* #8388 *) in
+		let diff = Int64.sub !imax !imin in
+		let use_tableswitch =
+			diff < (Int64.of_int (DynArray.length flat_cases + 10)) &&
+			diff >= Int64.zero (* #8388 *)
+		in
 		if use_tableswitch then begin
-			let offsets = Array.init (Int32.to_int (Int32.sub !imax !imin) + 1) (fun i ->
-				try Int32Map.find (Int32.add (Int32.of_int i) !imin) !case_lut
+			let imin = Int64.to_int32 !imin in
+			let imax = Int64.to_int32 !imax in
+			let offsets = Array.init (Int32.to_int (Int32.sub imax imin) + 1) (fun i ->
+				try Int32Map.find (Int32.add (Int32.of_int i) imin) !case_lut
 				with Not_found -> offset_def
 			) in
-			code#tableswitch offset_def !imin !imax offsets
+			code#tableswitch offset_def imin imax offsets
 		end else begin
 			let a = DynArray.to_array flat_cases in
 			Array.sort (fun (i1,_) (i2,_) -> compare i1 i2) a;
@@ -901,6 +882,29 @@ class builder jc name jsig = object(self)
 		if Array.length stack_map_table > 0 then
 			DynArray.add attributes (AttributeStackMapTable stack_map_table);
 		let exceptions = Array.of_list (List.rev exceptions) in
+		if config.export_debug then begin match debug_locals with
+		| [] ->
+			()
+		| _ ->
+			let type_locals = DynArray.create () in
+			let map (fp,length,name,jsig,index) =
+				let ld = {
+					ld_start_pc = fp;
+					ld_length = length;
+					ld_name_index = jc#get_pool#add_string name;
+					ld_descriptor_index = jc#get_pool#add_string (generate_signature false jsig);
+					ld_index = index;
+				} in
+				if has_type_parameter jsig then DynArray.add type_locals {ld with ld_descriptor_index = jc#get_pool#add_string (generate_signature true jsig)};
+				ld
+			in
+			let locals = Array.of_list (List.map map debug_locals) in
+			DynArray.add attributes (AttributeLocalVariableTable locals);
+			if DynArray.length type_locals > 0 then begin
+				let locals = DynArray.to_array type_locals in
+				DynArray.add attributes (AttributeLocalVariableTypeTable locals);
+			end
+		end;
 		let attributes = List.map (JvmAttribute.write_attribute jc#get_pool) (DynArray.to_list attributes) in
 		{
 			code_max_stack = code#get_max_stack_size;
@@ -921,13 +925,6 @@ class builder jc name jsig = object(self)
 		end;
 		if Hashtbl.length thrown_exceptions > 0 then
 			self#add_attribute (AttributeExceptions (Array.of_list (Hashtbl.fold (fun k _ c -> k :: c) thrown_exceptions [])));
-		if config.export_debug then begin match debug_locals with
-		| [] ->
-			()
-		| _ ->
-			let a = Array.of_list debug_locals in
-			self#add_attribute (AttributeLocalVariableTable a);
-		end;
 		let attributes = self#export_attributes jc#get_pool in
 		let offset_name = jc#get_pool#add_string name in
 		let jsig = generate_method_signature false jsig in
