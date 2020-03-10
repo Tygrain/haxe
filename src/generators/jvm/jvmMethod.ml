@@ -25,6 +25,46 @@ open JvmSignature
 open JvmSignature.NativeSignatures
 open JvmBuilder
 
+let rec pow a b = match b with
+	| 0 -> Int32.one
+	| 1 -> a
+	| _ -> Int32.mul a (pow a (b - 1))
+
+let java_hash s =
+	let h = ref Int32.zero in
+	let l = UTF8.length s in
+	let i31 = Int32.of_int 31 in
+	let i = ref 0 in
+	UTF8.iter (fun char ->
+		let char = Int32.of_int (UCharExt.uint_code char) in
+		h := Int32.add !h (Int32.mul char (pow i31 (l - (!i + 1))));
+		incr i;
+	) s;
+	!h
+
+module HashtblList = struct
+	type ('a,'b) t = {
+		values : ('a,'b) Hashtbl.t;
+		mutable keys : 'a list;
+	}
+
+	let create () = {
+		values = Hashtbl.create 0;
+		keys = []
+	}
+
+	let add htl key value =
+		if not (Hashtbl.mem htl.values key) then begin
+			htl.keys <- key :: htl.keys
+		end;
+		Hashtbl.add htl.values key value
+
+	let as_list htl =
+		List.map (fun key ->
+			(key,Hashtbl.find_all htl.values key)
+		) htl.keys
+end
+
 (* High-level method builder. *)
 
 type var_init_state =
@@ -35,6 +75,10 @@ type var_init_state =
 type construction_kind =
 	| ConstructInitPlusNew
 	| ConstructInit
+
+type label_state =
+	| LabelSet of jbranchoffset
+	| LabelNotSet of jbranchoffset ref list ref
 
 module NativeArray = struct
 	let read code ja je = match je with
@@ -98,9 +142,7 @@ class builder jc name jsig = object(self)
 	val mutable exceptions = []
 	val mutable argument_locals = []
 	val mutable thrown_exceptions = Hashtbl.create 0
-
-	(* per-branch *)
-	val mutable terminated = false
+	val mutable closure_count = 0
 
 	(* per-frame *)
 	val mutable locals = []
@@ -147,6 +189,11 @@ class builder jc name jsig = object(self)
 			| None -> JvmVerificationTypeInfo.VTop
 			| _ -> JvmVerificationTypeInfo.of_signature jc#get_pool t
 		) locals
+
+	method get_next_closure_id =
+		let id = closure_count in
+		closure_count <- closure_count + 1;
+		id
 
 	(** Adds the current state of locals and stack as a stack frame. This has to be called on every branch target. **)
 	method add_stack_frame =
@@ -310,7 +357,6 @@ class builder jc name jsig = object(self)
 			| Some jsig ->
 				code#return_value jsig
 			end;
-			self#set_terminated true;
 		| _ ->
 			assert false
 
@@ -546,6 +592,8 @@ class builder jc name jsig = object(self)
 				code#checkcast path1;
 		| TObject(path,_),TTypeParameter _ ->
 			code#checkcast path
+		| TMethod _,TMethod _ ->
+			()
 		| TMethod _,_ ->
 			code#checkcast NativeSignatures.haxe_function_path;
 		| TArray(jsig1,_),TArray(jsig2,_) when jsig1 = jsig2 ->
@@ -568,42 +616,58 @@ class builder jc name jsig = object(self)
 	**)
 	method start_branch =
 		let save = code#get_stack#save in
-		let old_terminated = terminated in
+		let old_terminated = code#is_terminated in
 		(fun () ->
 			code#get_stack#restore save;
-			terminated <- old_terminated;
+			code#set_terminated old_terminated;
 		)
 
 	(** Generates code which executes [f_if()] and then branches into [f_then()] and [f_else()]. **)
-	method if_then_else (f_if : unit -> jbranchoffset ref) (f_then : unit -> unit) (f_else : unit -> unit) =
-		let jump_then = f_if () in
+	method if_then_else (f_if : jbranchoffset ref -> unit) (f_then : unit -> unit) (f_else : unit -> unit) =
+		self#if_then_else_labeled (fun label_then label_else ->
+			label_else#apply f_if
+		) f_then f_else
+
+	method if_then_else_labeled (f_if : label -> label -> unit) (f_then : unit -> unit) (f_else : unit -> unit) =
+		let label_then = self#spawn_label "then" in
+		let label_else = self#spawn_label "else" in
+		let label_exit = self#spawn_label "exit" in
+		f_if label_then label_else;
+		label_then#here;
 		let restore = self#start_branch in
 		let pop = self#push_scope in
 		f_then();
 		pop();
-		let r_then = ref code#get_fp in
 		let term_then = self#is_terminated in
-		if not term_then then code#goto r_then;
-		jump_then := code#get_fp - !jump_then;
+		if not self#is_terminated then label_exit#goto;
 		restore();
-		self#add_stack_frame;
-		let pop = self#push_scope in
+		label_else#here;
 		f_else();
-		pop();
-		self#set_terminated (term_then && self#is_terminated);
-		r_then := code#get_fp - !r_then;
-		if not self#is_terminated then self#add_stack_frame
+		if term_then && self#is_terminated then
+			self#set_terminated true
+		else begin
+			self#set_terminated false;
+			label_exit#here
+		end
 
 	(** Generates code which executes [f_if()] and then branches into [f_then()], if the condition holds. **)
-	method if_then (f_if : unit -> jbranchoffset ref) (f_then : unit -> unit) =
-		let jump_then = f_if () in
+	method if_then (f_if : jbranchoffset ref -> unit) (f_then : unit -> unit) =
+		self#if_then_labeled (fun _ label_else -> label_else#apply f_if) f_then
+
+	method if_then_labeled (f_if : label -> label -> unit) (f_then : unit -> unit) =
+		let label_then = self#spawn_label "then" in
+		let label_else = self#spawn_label "else" in
+		f_if label_then label_else;
+		label_then#here;
 		let restore = self#start_branch in
 		let pop = self#push_scope in
 		f_then();
 		pop();
 		restore();
-		jump_then := code#get_fp - !jump_then;
-		self#add_stack_frame
+		label_else#here
+
+	method spawn_label (name : string) =
+		new label (self :> builder) name
 
 	(**
 		Returns an instruction offset and emits a goto instruction to it if this method isn't terminated.
@@ -629,6 +693,109 @@ class builder jc name jsig = object(self)
 		if not term then self#add_stack_frame;
 
 
+	method string_switch
+		(need_val : bool)
+		(load : (unit -> unit))
+		(cases : (string list * (unit -> unit)) list)
+		(def : (unit -> unit) option)
+	=
+		let buckets = HashtblList.create () in
+		let exprs = List.mapi (fun index (sl,f) ->
+			List.iter (fun s ->
+				HashtblList.add buckets (java_hash s) (s,index);
+			) sl;
+			(f,List.length sl)
+		) cases in
+		let cases = HashtblList.as_list buckets in
+		let exprs = Array.of_list exprs in
+		let def = match def with
+			| None when need_val ->
+				Some (fun () ->
+					self#string "Match failure";
+					self#invokestatic (["haxe";"jvm"],"Exception") "wrap" (method_sig [object_sig] (Some exception_sig));
+					self#get_code#athrow;
+				)
+			| _ ->
+				def
+		in
+		let label_def = self#spawn_label "default" in
+		let label_exit = self#spawn_label "exit" in
+		(* all strings can be null and we're not supposed to cause NPEs here... *)
+		load();
+		label_def#apply (self#get_code#if_null string_sig);
+		(* switch *)
+		load();
+		self#invokevirtual string_path "hashCode" (method_sig [] (Some TInt));
+		let exprs = Array.map (fun e -> e,self#spawn_label "case-expr") exprs in
+		let jump_table = List.map (fun (hash,l) -> hash,self#spawn_label "hash-match") cases in
+		let sorted_jump_table = List.map (fun (hash,label) -> hash,label#mk_offset) jump_table in
+		let sorted_jump_table = Array.of_list sorted_jump_table in
+		Array.sort (fun (i1,_) (i2,_) -> compare i1 i2) sorted_jump_table;
+		code#lookupswitch label_def#mk_offset sorted_jump_table;
+		let restore = self#start_branch in
+		(* cases *)
+		let rec loop cases jumps = match cases,jumps with
+			| (_,l) :: cases,(_,label) :: jumps ->
+				label#here;
+				List.iter (fun (s,i) ->
+					restore();
+					let pop_scope = self#push_scope in
+					let (f,num_jumps),label_expr = exprs.(i) in
+					load();
+					self#string s;
+					self#invokevirtual string_path "equals" (method_sig [object_sig] (Some TBool));
+					if num_jumps = 1 then begin
+						self#if_then
+							(code#if_ CmpEq)
+							(fun () ->
+								f();
+								if not self#is_terminated then label_exit#goto;
+							)
+					end else
+						label_expr#apply (code#if_ CmpNe);
+					pop_scope();
+				) l;
+				label_def#goto;
+				loop cases jumps
+			| [],[] ->
+				()
+			| _ ->
+				assert false
+		in
+		loop cases jump_table;
+		(* exprs *)
+		Array.iter (fun ((f,num_jumps),label_expr) ->
+			if num_jumps <> 1 then begin
+				restore();
+				label_expr#here;
+				let pop_scope = self#push_scope in
+				f();
+				pop_scope();
+				if not self#is_terminated then label_exit#goto;
+			end;
+		) exprs;
+		(* default *)
+		begin match def with
+			| None ->
+				()
+			| Some f ->
+				restore();
+				label_def#here;
+				let pop_scope = self#push_scope in
+				f();
+				pop_scope();
+				if not self#is_terminated then label_exit#goto;
+		end;
+		if label_exit#was_jumped_to then label_exit#here;
+		if def = None then begin
+			self#set_terminated false;
+			label_def#here;
+		end else if label_exit#was_jumped_to then
+			self#set_terminated false
+		else
+			self#set_terminated true
+
+
 	(**
 		Emits a tableswitch or lookupswitch instruction, depending on which one makes more sense.
 
@@ -643,29 +810,27 @@ class builder jc name jsig = object(self)
 					self#string "Match failure";
 					self#invokestatic (["haxe";"jvm"],"Exception") "wrap" (method_sig [object_sig] (Some exception_sig));
 					self#get_code#athrow;
-					self#set_terminated true;
 				)
 			| _ ->
 				def
 		in
 		let flat_cases = DynArray.create () in
 		let case_lut = ref Int32Map.empty in
-		let fp = code#get_fp in
 		let imin = ref Int64.max_int in
 		let imax = ref Int64.min_int in
 		let cases = List.map (fun (il,f) ->
 			let rl = List.map (fun i32 ->
-				let r = ref fp in
+				let r = self#spawn_label "case" in
 				let i64 = Int64.of_int32 i32 in
 				if i64 < !imin then imin := i64;
 				if i64 > !imax then imax := i64;
-				DynArray.add flat_cases (i32,r);
+				DynArray.add flat_cases (i32,r#mk_offset);
 				case_lut := Int32Map.add i32 r !case_lut;
 				r
 			) il in
 			(rl,f)
 		) cases in
-		let offset_def = ref fp in
+		let label_def = self#spawn_label "default" in
 		(* No idea what's a good heuristic here... *)
 		let diff = Int64.sub !imax !imin in
 		let use_tableswitch =
@@ -677,43 +842,45 @@ class builder jc name jsig = object(self)
 			let imax = Int64.to_int32 !imax in
 			let offsets = Array.init (Int32.to_int (Int32.sub imax imin) + 1) (fun i ->
 				try Int32Map.find (Int32.add (Int32.of_int i) imin) !case_lut
-				with Not_found -> offset_def
+				with Not_found -> label_def
 			) in
-			code#tableswitch offset_def imin imax offsets
+			code#tableswitch label_def#mk_offset imin imax (Array.map (fun label -> label#mk_offset) offsets)
 		end else begin
 			let a = DynArray.to_array flat_cases in
 			Array.sort (fun (i1,_) (i2,_) -> compare i1 i2) a;
-			code#lookupswitch offset_def a;
+			code#lookupswitch label_def#mk_offset a;
 		end;
 		let restore = self#start_branch in
-		let offset_exit = ref code#get_fp in
-		let def_term,r_def = match def with
+		let label_exit = self#spawn_label "exit" in
+		begin match def with
 			| None ->
-				true,ref 0
+				()
 			| Some f ->
-				offset_def := code#get_fp - !offset_def;
-				self#add_stack_frame;
+				label_def#here;
 				let pop_scope = self#push_scope in
 				f();
 				pop_scope();
-				self#is_terminated,self#maybe_make_jump
-		in
-		let rec loop acc cases = match cases with
+				if not self#is_terminated then label_exit#goto;
+		end;
+		let rec loop cases = match cases with
 		| (rl,f) :: cases ->
 			restore();
-			self#add_stack_frame;
-			List.iter (fun r -> r := code#get_fp - !r) rl;
+			List.iter (fun label -> label#here) rl;
 			let pop_scope = self#push_scope in
 			f();
 			pop_scope();
-			let r = if cases = [] then ref 0 else self#maybe_make_jump in
-			loop ((self#is_terminated,r) :: acc) cases
+			if cases <> [] && not self#is_terminated then label_exit#goto;
+			loop cases
 		| [] ->
-			List.rev acc
+			()
 		in
-		let rl = loop [] cases in
-		self#close_jumps (def <> None) ((def_term,if def = None then offset_def else r_def) :: rl);
-		if def = None then code#get_fp else !offset_exit
+		loop cases;
+		if label_exit#was_jumped_to then label_exit#here;
+		if def = None then begin
+			self#set_terminated false;
+			label_def#here;
+		end else if label_exit#was_jumped_to then
+			self#set_terminated false
 
 	(** Adds a local with a given [name], signature [jsig] and an [init_state].
 	    This function returns a tuple consisting of:
@@ -868,10 +1035,10 @@ class builder jc name jsig = object(self)
 		Array.of_list (List.rev (snd stack_map))
 
 	method get_code = code
-	method is_terminated = terminated
+	method is_terminated = code#is_terminated
 	method get_name = name
 	method get_jsig = jsig
-	method set_terminated b = terminated <- b
+	method set_terminated b = code#set_terminated b
 
 	method private get_jcode (config : export_config) =
 		let attributes = DynArray.create () in
@@ -951,4 +1118,58 @@ class builder jc name jsig = object(self)
 			field_descriptor_index = offset_desc;
 			field_attributes = attributes;
 		}
+end
+
+and label (jm : builder) (name : string) = object(self)
+
+	val code = jm#get_code
+
+	val mutable state = LabelNotSet (ref [])
+	val mutable was_jumped_to = false
+
+	method was_jumped_to = was_jumped_to
+
+	method get_offset = match state with
+		| LabelSet fp -> fp
+		| LabelNotSet _ -> failwith (Printf.sprintf "Trying to get offset of unset label %s" name)
+
+	method mk_offset =
+		let r = ref code#get_fp in
+		was_jumped_to <- true;
+		begin match state with
+		| LabelNotSet l ->
+			l := r :: !l
+		| LabelSet fp' ->
+			r := fp' - !r
+		end;
+		r
+
+	method apply (f : jbranchoffset ref -> unit) =
+		f self#mk_offset
+
+	method if_ (cmp : jcmp) =
+		code#if_ cmp self#mk_offset
+
+	method if_null jsig =
+		code#if_null jsig self#mk_offset
+
+	method if_nonnull jsig =
+		code#if_nonnull jsig self#mk_offset
+
+	method goto =
+		code#goto self#mk_offset
+
+	method at fp = match state with
+		| LabelNotSet l ->
+			if fp = code#get_fp then jm#add_stack_frame;
+			List.iter (fun r ->
+				r := fp - !r
+			) !l;
+			state <- LabelSet fp
+		| LabelSet _ ->
+			if fp <> self#get_offset then
+				failwith (Printf.sprintf "Trying to instantiate label %s again" name)
+
+	method here =
+		self#at code#get_fp
 end
