@@ -85,7 +85,7 @@ type nested_function_scoping =
 	(** TFunction nodes are nested in the output **)
 	| Nested
 	(** TFunction nodes are nested in the output and there is var hoisting **)
-	| JsLike
+	| Hoisted
 
 type platform_config = {
 	(** has a static type system, with not-nullable basic types (Int/Float/Bool) *)
@@ -346,7 +346,7 @@ let get_config com =
 			pf_capture_policy = CPLoopVars;
 			pf_reserved_type_paths = [([],"Object");([],"Error")];
 			pf_this_before_super = (get_es_version com) < 6; (* cannot access `this` before `super()` when generating ES6 classes *)
-			pf_nested_function_scoping = JsLike;
+			pf_nested_function_scoping = Hoisted;
 		}
 	| Lua ->
 		{
@@ -377,6 +377,7 @@ let get_config com =
 			default_config with
 			pf_static = false;
 			pf_uses_utf16 = false;
+			pf_nested_function_scoping = Nested;
 		}
 	| Cpp ->
 		{
