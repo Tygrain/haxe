@@ -21,7 +21,9 @@ jobs:
     env:
       PLATFORM: linux64
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@master
+        with:
+          submodules: recursive
 
       @import install-neko.yml
       @import build-linux.yml

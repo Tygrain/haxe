@@ -21,7 +21,9 @@ jobs:
     env:
       PLATFORM: linux64
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@master
+        with:
+          submodules: recursive
 
       - name: Install Neko using snapshot from S3 (Windows)
         if: env.PLATFORM == 'windows'
@@ -49,15 +51,15 @@ jobs:
           sudo ln -s $NEKOPATH/libneko.*                      /usr/local/lib/
           sudo ln -s $NEKOPATH/*.ndll                         /usr/local/lib/neko/
           set +x
-          echo "::add-path::$NEKOPATH"
-          echo "::set-env name=NEKOPATH::$NEKOPATH"
+          # echo "::add-path::$NEKOPATH"
+          # echo "::set-env name=NEKOPATH::$NEKOPATH"
       
       - name: ldconfig
         if: env.PLATFORM == 'linux64'
         run: sudo ldconfig
       
-      - name: Print Neko version
-        run: neko -version 2>&1
+      # - name: Print Neko version
+      #   run: neko -version 2>&1
       
       
       - name: Install dependencies
@@ -86,11 +88,11 @@ jobs:
       - name: Build Haxe
         run: |
           set -ex
-          # opam config exec -- make -s -j`nproc` STATICLINK=1 haxe
-          # opam config exec -- make -s haxelib
           eval $(opam env)
-          make -s package_bin
-          ls -l out
+          opam config exec -- make -s -j`nproc` STATICLINK=1 haxe
+          opam config exec -- make -s haxelib
+          make
+          # ls -l out
           ldd -v ./haxe
           ldd -v ./haxelib
       

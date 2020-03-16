@@ -24,11 +24,11 @@
 - name: Build Haxe
   run: |
     set -ex
-    # opam config exec -- make -s -j`nproc` STATICLINK=1 haxe
-    # opam config exec -- make -s haxelib
     eval $(opam env)
-    make -s package_bin
-    ls -l out
+    opam config exec -- make -s -j`nproc` STATICLINK=1 haxe
+    opam config exec -- make -s haxelib
+    make
+    # ls -l out
     ldd -v ./haxe
     ldd -v ./haxelib
 

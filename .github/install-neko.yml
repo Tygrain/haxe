@@ -24,13 +24,13 @@
     sudo ln -s $NEKOPATH/libneko.*                      /usr/local/lib/
     sudo ln -s $NEKOPATH/*.ndll                         /usr/local/lib/neko/
     set +x
-    echo "::add-path::$NEKOPATH"
-    echo "::set-env name=NEKOPATH::$NEKOPATH"
+    # echo "::add-path::$NEKOPATH"
+    # echo "::set-env name=NEKOPATH::$NEKOPATH"
 
 - name: ldconfig
   if: env.PLATFORM == 'linux64'
   run: sudo ldconfig
 
-- name: Print Neko version
-  run: neko -version 2>&1
+# - name: Print Neko version
+#   run: neko -version 2>&1
 
