@@ -86,8 +86,9 @@ jobs:
       - name: Build Haxe
         run: |
           set -ex
-          opam config exec -- make -s -j`nproc` STATICLINK=1 haxe
-          opam config exec -- make -s haxelib
+          # opam config exec -- make -s -j`nproc` STATICLINK=1 haxe
+          # opam config exec -- make -s haxelib
+          eval $(opam env)
           make -s package_bin
           ls -l out
           ldd -v ./haxe
