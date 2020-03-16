@@ -18,15 +18,12 @@ jobs:
     #       - lua
     #       - flash
     #       - neko
-
-    - job-build-linux:
-      - name: Build Linux
       steps:
       - uses: actions/checkout@v2
       - uses: ./.github/actions/build-linux
 
-    - job-test-linux:
-      needs: job-build-linux
+    job-test-linux:
+      needs: linux-build
       steps:
 
       - name: Install Neko action
