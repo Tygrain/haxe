@@ -1,0 +1,53 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  linux-build:
+    runs-on: ubuntu-latest
+    # strategy:
+    #   matrix:
+    #     target:
+    #       - macro
+    #       - js
+    #       - hl
+    #       - cpp
+    #       - java
+    #       - cs
+    #       - php
+    #       - python
+    #       - lua
+    #       - flash
+    #       - neko
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - job-build-linux:
+      - name: Build Linux
+        uses: ./.github/actions/build-linux
+
+    - job-test-linux:
+      needs: job-build-linux
+
+      - name: Install Neko action
+        uses: ./.github/actions/install-neko
+        with:
+          platform: linux64
+
+      - uses: actions/download-artifact@v1
+        with:
+          name: linuxBinaries
+
+      - name: Setup Haxe
+        run: |
+          set -ex
+          tar -xf linuxBinaries/*_bin.tar.gz -C linuxBinaries --strip-components=1
+          sudo mkdir -p /usr/local/bin/
+          sudo mkdir -p /usr/local/share/haxe/
+          sudo ln -s `pwd`/linuxBinaries/haxe /usr/local/bin/haxe
+          sudo ln -s `pwd`/linuxBinaries/haxelib /usr/local/bin/haxelib
+          sudo ln -s `pwd`/linuxBinaries/std /usr/local/share/haxe/std
+
+      - name: Print Haxe version
+        run: haxe -version
+

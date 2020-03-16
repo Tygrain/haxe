@@ -1,0 +1,32 @@
+steps:
+- name: Install Neko using snapshot from S3
+  if: INPUT_PLATFORM == 'windows'
+  shell: pwsh
+  run: |
+    $DOWNLOADDIR="./temp"
+    Invoke-WebRequest https://build.haxe.org/builds/neko/$INPUT_PLATFORM/neko_latest.zip -OutFile $DOWNLOADDIR/neko_latest.zip
+    Expand-Archive $DOWNLOADDIR/neko_latest.zip -DestinationPath $DOWNLOADDIR
+    $NEKOPATH = Get-ChildItem $DOWNLOADDIR/neko-*-*
+    Write-Host "##vso[task.prependpath]$NEKOPATH"
+    Write-Host "##vso[task.setvariable variable=NEKOPATH]$NEKOPATH"
+  if: INPUT_PLATFORM != 'windows'
+  run: |
+    set -ex
+    DOWNLOADDIR="./temp"
+    curl -sSL https://build.haxe.org/builds/neko/$INPUT_PLATFORM/neko_latest.tar.gz -o $DOWNLOADDIR/neko_latest.tar.gz
+    tar -xf $DOWNLOADDIR/neko_latest.tar.gz -C $DOWNLOADDIR
+    NEKOPATH=`echo $DOWNLOADDIR/neko-*-*`
+    sudo mkdir -p /usr/local/bin
+    sudo mkdir -p /usr/local/lib/neko
+    sudo ln -s $NEKOPATH/{neko,nekoc,nekoml,nekotools}  /usr/local/bin/
+    sudo ln -s $NEKOPATH/libneko.*                      /usr/local/lib/
+    sudo ln -s $NEKOPATH/*.ndll                         /usr/local/lib/neko/
+    set +x
+    echo "##vso[task.prependpath]$NEKOPATH"
+    echo "##vso[task.setvariable variable=NEKOPATH]$NEKOPATH"
+  - name: ldconfig
+    if: INPUT_PLATFORM == 'linux64'
+    run: sudo ldconfig
+  - name: Print Neko version
+    run: neko -version 2>&1
+
