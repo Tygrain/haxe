@@ -4,7 +4,7 @@
     sudo add-apt-repository ppa:avsm/ppa -y # provides OPAM 2
     sudo add-apt-repository ppa:haxe/ocaml -y # provides newer version of mbedtls
     sudo apt-get update -qqy
-    sudo apt-get install -qqy ocaml-nox camlp5 opam libpcre3-dev zlib1g-dev libgtk2.0-dev libmbedtls-dev ninja-build
+    sudo apt-get install -qqy ocaml-nox camlp5 opam libpcre3-dev zlib1g-dev libgtk2.0-dev libmbedtls-dev ninja-build neko neko-dev
 
 # - name: Install Neko action
 #   uses: ./.github/actions/install-neko
@@ -14,10 +14,10 @@
 - name: Install OCaml libraries
   run: |
     set -ex
-    opam init
+    opam init --yes --disable-sandboxing
     opam update
     opam pin add haxe . --no-action
-    opam install haxe --deps-only
+    opam install haxe --deps-only --yes
     opam list
     ocamlopt -v
 
