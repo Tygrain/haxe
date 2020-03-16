@@ -14,6 +14,7 @@
   run: |
     set -ex
     DOWNLOADDIR="./temp"
+    mkdir $DOWNLOADDIR
     curl -sSL https://build.haxe.org/builds/neko/$PLATFORM/neko_latest.tar.gz -o $DOWNLOADDIR/neko_latest.tar.gz
     tar -xf $DOWNLOADDIR/neko_latest.tar.gz -C $DOWNLOADDIR
     NEKOPATH=`echo $DOWNLOADDIR/neko-*-*`
