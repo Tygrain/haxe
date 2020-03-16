@@ -19,7 +19,7 @@ jobs:
     #       - flash
     #       - neko
     env:
-      platform: linux64
+      PLATFORM: linux64
     steps:
       - uses: actions/checkout@v2
 
