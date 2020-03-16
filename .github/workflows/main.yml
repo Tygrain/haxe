@@ -18,32 +18,103 @@ jobs:
     #       - lua
     #       - flash
     #       - neko
+    env:
+      platform: linux64
     steps:
       - uses: actions/checkout@v2
-      - uses: ./.github/actions/build-linux
 
-  job-test-linux:
-    runs-on: ubuntu-latest
-    needs: linux-build
-    steps:
-      - uses: actions/checkout@v2
-      - uses: ./.github/actions/install-neko
-        with:
-          platform: linux64
+      - name: Install Neko using snapshot from S3 (Windows)
+        if: env.PLATFORM == 'windows'
+        shell: pwsh
+        run: |
+          $DOWNLOADDIR="./temp"
+          Invoke-WebRequest https://build.haxe.org/builds/neko/$PLATFORM/neko_latest.zip -OutFile $DOWNLOADDIR/neko_latest.zip
+          Expand-Archive $DOWNLOADDIR/neko_latest.zip -DestinationPath $DOWNLOADDIR
+          $NEKOPATH = Get-ChildItem $DOWNLOADDIR/neko-*-*
+          Write-Host "##vso[task.prependpath]$NEKOPATH"
+          Write-Host "##vso[task.setvariable variable=NEKOPATH]$NEKOPATH"
+      
+      - name: Install Neko using snapshot from S3 (Unix)
+        if: env.PLATFORM != 'windows'
+        run: |
+          set -ex
+          DOWNLOADDIR="./temp"
+          curl -sSL https://build.haxe.org/builds/neko/$PLATFORM/neko_latest.tar.gz -o $DOWNLOADDIR/neko_latest.tar.gz
+          tar -xf $DOWNLOADDIR/neko_latest.tar.gz -C $DOWNLOADDIR
+          NEKOPATH=`echo $DOWNLOADDIR/neko-*-*`
+          sudo mkdir -p /usr/local/bin
+          sudo mkdir -p /usr/local/lib/neko
+          sudo ln -s $NEKOPATH/{neko,nekoc,nekoml,nekotools}  /usr/local/bin/
+          sudo ln -s $NEKOPATH/libneko.*                      /usr/local/lib/
+          sudo ln -s $NEKOPATH/*.ndll                         /usr/local/lib/neko/
+          set +x
+          echo "##vso[task.prependpath]$NEKOPATH"
+          echo "##vso[task.setvariable variable=NEKOPATH]$NEKOPATH"
+      
+      - name: ldconfig
+        if: env.PLATFORM == 'linux64'
+        run: sudo ldconfig
+      
+      - name: Print Neko version
+        run: neko -version 2>&1
+      
+      
+      - name: Install dependencies
+        run: |
+          set -ex
+          sudo add-apt-repository ppa:avsm/ppa -y # provides OPAM 2
+          sudo add-apt-repository ppa:haxe/ocaml -y # provides newer version of mbedtls
+          sudo apt-get update -qqy
+          sudo apt-get install -qqy ocaml-nox camlp5 opam libpcre3-dev zlib1g-dev libgtk2.0-dev libmbedtls-dev ninja-build
+      
+      # - name: Install Neko action
+      #   uses: ./.github/actions/install-neko
+      #   with:
+      #     platform: linux64 # can be linux64, mac, windows, or windows64
+      
+      - name: Install OCaml libraries
+        run: |
+          set -ex
+          opam init
+          opam update
+          opam pin add haxe . --no-action
+          opam install haxe --deps-only
+          opam list
+          ocamlopt -v
+      
+      - name: Build Haxe
+        run: |
+          set -ex
+          opam config exec -- make -s -j`nproc` STATICLINK=1 haxe
+          opam config exec -- make -s haxelib
+          make -s package_bin
+          ls -l out
+          ldd -v ./haxe
+          ldd -v ./haxelib
+      
+      # TODO Build xmldoc
+      # - name: Build xmldoc
+      #   run:
+      
+      # - name: Upload artifact
+      #   uses: actions/upload-artifact@v1.0.0
+      #   with:
+      #     name: linuxBinaries
+      #     path: out
+      
 
-      - uses: actions/download-artifact@v1
-        with:
-          name: linuxBinaries
+      # - uses: actions/download-artifact@v1
+      #   with:
+      #     name: linuxBinaries
 
       - name: Setup Haxe
         run: |
           set -ex
-          tar -xf linuxBinaries/*_bin.tar.gz -C linuxBinaries --strip-components=1
           sudo mkdir -p /usr/local/bin/
           sudo mkdir -p /usr/local/share/haxe/
-          sudo ln -s `pwd`/linuxBinaries/haxe /usr/local/bin/haxe
-          sudo ln -s `pwd`/linuxBinaries/haxelib /usr/local/bin/haxelib
-          sudo ln -s `pwd`/linuxBinaries/std /usr/local/share/haxe/std
+          sudo ln -s `pwd`/haxe /usr/local/bin/haxe
+          sudo ln -s `pwd`/haxelib /usr/local/bin/haxelib
+          sudo ln -s `pwd`/std /usr/local/share/haxe/std
 
       - name: Print Haxe version
         run: haxe -version

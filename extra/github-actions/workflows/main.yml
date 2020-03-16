@@ -1,0 +1,44 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  linux-build:
+    runs-on: ubuntu-latest
+    # strategy:
+    #   matrix:
+    #     target:
+    #       - macro
+    #       - js
+    #       - hl
+    #       - cpp
+    #       - java
+    #       - cs
+    #       - php
+    #       - python
+    #       - lua
+    #       - flash
+    #       - neko
+    env:
+      platform: linux64
+    steps:
+      - uses: actions/checkout@v2
+
+      @import install-neko.yml
+      @import build-linux.yml
+
+      # - uses: actions/download-artifact@v1
+      #   with:
+      #     name: linuxBinaries
+
+      - name: Setup Haxe
+        run: |
+          set -ex
+          sudo mkdir -p /usr/local/bin/
+          sudo mkdir -p /usr/local/share/haxe/
+          sudo ln -s `pwd`/haxe /usr/local/bin/haxe
+          sudo ln -s `pwd`/haxelib /usr/local/bin/haxelib
+          sudo ln -s `pwd`/std /usr/local/share/haxe/std
+
+      - name: Print Haxe version
+        run: haxe -version
+
