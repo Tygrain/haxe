@@ -4,20 +4,6 @@ on: [push, pull_request]
 jobs:
   linux-build:
     runs-on: ubuntu-latest
-    # strategy:
-    #   matrix:
-    #     target:
-    #       - macro
-    #       - js
-    #       - hl
-    #       - cpp
-    #       - java
-    #       - cs
-    #       - php
-    #       - python
-    #       - lua
-    #       - flash
-    #       - neko
     env:
       PLATFORM: linux64
     steps:
@@ -25,43 +11,6 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install Neko using snapshot from S3 (Windows)
-        if: env.PLATFORM == 'windows'
-        shell: pwsh
-        run: |
-          $DOWNLOADDIR="./temp"
-          Invoke-WebRequest https://build.haxe.org/builds/neko/$PLATFORM/neko_latest.zip -OutFile $DOWNLOADDIR/neko_latest.zip
-          Expand-Archive $DOWNLOADDIR/neko_latest.zip -DestinationPath $DOWNLOADDIR
-          $NEKOPATH = Get-ChildItem $DOWNLOADDIR/neko-*-*
-          Write-Host "::add-path::$NEKOPATH"
-          Write-Host "::set-env name=NEKOPATH::$NEKOPATH"
-      
-      - name: Install Neko using snapshot from S3 (Unix)
-        if: env.PLATFORM != 'windows'
-        run: |
-          set -ex
-          DOWNLOADDIR="temp"
-          mkdir $DOWNLOADDIR
-          curl -sSL https://build.haxe.org/builds/neko/$PLATFORM/neko_latest.tar.gz -o $DOWNLOADDIR/neko_latest.tar.gz
-          tar -xf $DOWNLOADDIR/neko_latest.tar.gz -C $DOWNLOADDIR
-          NEKOPATH=`echo $DOWNLOADDIR/neko-*-*`
-          sudo mkdir -p /usr/local/bin
-          sudo mkdir -p /usr/local/lib/neko
-          sudo ln -s $NEKOPATH/{neko,nekoc,nekoml,nekotools}  /usr/local/bin/
-          sudo ln -s $NEKOPATH/libneko.*                      /usr/local/lib/
-          sudo ln -s $NEKOPATH/*.ndll                         /usr/local/lib/neko/
-          set +x
-          # echo "::add-path::$NEKOPATH"
-          # echo "::set-env name=NEKOPATH::$NEKOPATH"
-      
-      - name: ldconfig
-        if: env.PLATFORM == 'linux64'
-        run: sudo ldconfig
-      
-      # - name: Print Neko version
-      #   run: neko -version 2>&1
-      
-      
       - name: Install dependencies
         run: |
           set -ex
@@ -69,11 +18,6 @@ jobs:
           sudo add-apt-repository ppa:haxe/ocaml -y # provides newer version of mbedtls
           sudo apt-get update -qqy
           sudo apt-get install -qqy ocaml-nox camlp5 opam libpcre3-dev zlib1g-dev libgtk2.0-dev libmbedtls-dev ninja-build neko neko-dev
-      
-      # - name: Install Neko action
-      #   uses: ./.github/actions/install-neko
-      #   with:
-      #     platform: linux64 # can be linux64, mac, windows, or windows64
       
       - name: Install OCaml libraries
         run: |
@@ -95,31 +39,133 @@ jobs:
           # ls -l out
           ldd -v ./haxe
           ldd -v ./haxelib
+          mkdir out
+          mv ./haxe ./out
+          mv ./haxelib ./out
+          mv ./std ./out
       
       # TODO Build xmldoc
       # - name: Build xmldoc
       #   run:
       
-      # - name: Upload artifact
-      #   uses: actions/upload-artifact@v1.0.0
-      #   with:
-      #     name: linuxBinaries
-      #     path: out
+      - name: Upload artifact
+        uses: actions/upload-artifact@v1.0.0
+        with:
+          name: linuxBinaries
+          path: out
       
 
-      # - uses: actions/download-artifact@v1
-      #   with:
-      #     name: linuxBinaries
+  linux-test:
+    needs: linux-build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [macro, js, hl, cpp, java, cs, php, python, lua, flash, neko]
+        include:
+          - target: macro
+          - target: js
+            # SAUCE: 1
+            # SAUCE_TUNNEL_ID: 'linux-test'
+            # SAUCE_BUILD: '${{GITHUB_RUN_NUMBER}}' # $(Build.BuildNumber)
+          - target: hl
+            APT_PACKAGES: cmake ninja-build
+          - target: cpp
+            APT_PACKAGES: gcc-multilib g++-multilib
+          - target: java
+          - target: cs
+          - target: php
+          - target: python
+          - target: lua
+            APT_PACKAGES: ncurses-dev
+          - target: flash
+            APT_PACKAGES: libglib2.0 libfreetype6 xvfb
+            DISPLAY: ':99.0'
+            AUDIODEV: 'null'
+          - target: neko
+    env:
+      TEST: ${{matrix.target}}
+    steps:
+      - uses: actions/checkout@master
+        with:
+          submodules: recursive
+      - uses: actions/download-artifact@v1
+        with:
+          name: linuxBinaries
+
+      - name: Install Neko using snapshot from S3 (Windows)
+        if: startsWith(env.PLATFORM, 'windows')
+        shell: pwsh
+        run: |
+          $DOWNLOADDIR="./temp"
+          new-item -Name $DOWNLOADDIR -ItemType directory
+          Invoke-WebRequest https://build.haxe.org/builds/neko/$PLATFORM/neko_latest.zip -OutFile $DOWNLOADDIR/neko_latest.zip
+          Expand-Archive $DOWNLOADDIR/neko_latest.zip -DestinationPath $DOWNLOADDIR
+          $NEKOPATH = Get-ChildItem $DOWNLOADDIR/neko-*-*
+          Write-Host "::add-path::$NEKOPATH"
+          Write-Host "::set-env name=NEKOPATH::$NEKOPATH"
+      
+      - name: Install Neko using snapshot from S3 (Unix)
+        if: (!startsWith(env.PLATFORM, 'windows'))
+        run: |
+          set -ex
+          DOWNLOADDIR="./temp"
+          mkdir $DOWNLOADDIR
+          curl -sSL https://build.haxe.org/builds/neko/$PLATFORM/neko_latest.tar.gz -o $DOWNLOADDIR/neko_latest.tar.gz
+          tar -xf $DOWNLOADDIR/neko_latest.tar.gz -C $DOWNLOADDIR
+          NEKOPATH=`echo $DOWNLOADDIR/neko-*-*`
+          sudo mkdir -p /usr/local/bin
+          sudo mkdir -p /usr/local/lib/neko
+          sudo ln -s $NEKOPATH/{neko,nekoc,nekoml,nekotools}  /usr/local/bin/
+          sudo ln -s $NEKOPATH/libneko.*                      /usr/local/lib/
+          sudo ln -s $NEKOPATH/*.ndll                         /usr/local/lib/neko/
+          set +x
+          echo "::add-path::$NEKOPATH"
+          echo "::set-env name=NEKOPATH::$NEKOPATH"
+      
+      - name: ldconfig
+        if: env.PLATFORM == 'linux64'
+        run: sudo ldconfig
+      
+      - name: Print Neko version
+        run: neko -version 2>&1
+      
+      
 
       - name: Setup Haxe
         run: |
           set -ex
+          tar -xf linuxBinaries/*_bin.tar.gz -C linuxBinaries --strip-components=1
           sudo mkdir -p /usr/local/bin/
           sudo mkdir -p /usr/local/share/haxe/
-          sudo ln -s `pwd`/haxe /usr/local/bin/haxe
-          sudo ln -s `pwd`/haxelib /usr/local/bin/haxelib
-          sudo ln -s `pwd`/std /usr/local/share/haxe/std
+          sudo ln -s `pwd`/linuxBinaries/haxe /usr/local/bin/haxe
+          sudo ln -s `pwd`/linuxBinaries/haxelib /usr/local/bin/haxelib
+          sudo ln -s `pwd`/linuxBinaries/std /usr/local/share/haxe/std
 
       - name: Print Haxe version
         run: haxe -version
+
+      - name: Setup haxelib
+        run: |
+          set -ex
+          mkdir ~/haxelib
+          haxelib setup ~/haxelib
+
+      - name: Install apt packages
+        run: |
+          set -ex
+          sudo apt update -qqy
+          sudo apt install -qqy ${{matrix.APT_PACKAGES}}
+
+      - name: Test
+        if: (success() && !((${{matrix.SAUCE}} && ${{matrix.SAUCE_ACCESS_KEY}})))
+        run: haxe RunCi.hxml
+        working-directory: ${{github.workspace}}/tests
+
+      - name: Test (with SauceLabs)
+        if: (success() && ${{matrix.SAUCE}} && ${{matrix.SAUCE_ACCESS_KEY}})
+        run: haxe RunCi.hxml
+        working-directory: ${{github.workspace}}/tests
+        env:
+          SAUCE_ACCESS_KEY: ${{matrix.SAUCE_ACCESS_KEY}}
+
 

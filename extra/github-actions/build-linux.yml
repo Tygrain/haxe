@@ -6,11 +6,6 @@
     sudo apt-get update -qqy
     sudo apt-get install -qqy ocaml-nox camlp5 opam libpcre3-dev zlib1g-dev libgtk2.0-dev libmbedtls-dev ninja-build neko neko-dev
 
-# - name: Install Neko action
-#   uses: ./.github/actions/install-neko
-#   with:
-#     platform: linux64 # can be linux64, mac, windows, or windows64
-
 - name: Install OCaml libraries
   run: |
     set -ex
@@ -31,13 +26,17 @@
     # ls -l out
     ldd -v ./haxe
     ldd -v ./haxelib
+    mkdir out
+    mv ./haxe ./out
+    mv ./haxelib ./out
+    mv ./std ./out
 
 # TODO Build xmldoc
 # - name: Build xmldoc
 #   run:
 
-# - name: Upload artifact
-#   uses: actions/upload-artifact@v1.0.0
-#   with:
-#     name: linuxBinaries
-#     path: out
+- name: Upload artifact
+  uses: actions/upload-artifact@v1.0.0
+  with:
+    name: linuxBinaries
+    path: out
