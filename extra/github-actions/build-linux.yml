@@ -29,7 +29,6 @@
     mkdir out
     mv ./haxe ./out
     mv ./haxelib ./out
-    mv ./std ./out
 
 # TODO Build xmldoc
 # - name: Build xmldoc

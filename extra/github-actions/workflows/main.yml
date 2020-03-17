@@ -16,6 +16,9 @@ jobs:
   linux-test:
     needs: linux-build
     runs-on: ubuntu-latest
+    env:
+      PLATFORM: linux64
+      TEST: ${{matrix.target}}
     strategy:
       matrix:
         target: [macro, js, hl, cpp, java, cs, php, python, lua, flash, neko]
@@ -24,7 +27,7 @@ jobs:
           - target: js
             # SAUCE: 1
             # SAUCE_TUNNEL_ID: 'linux-test'
-            # SAUCE_BUILD: '${{GITHUB_RUN_NUMBER}}' # $(Build.BuildNumber)
+            # SAUCE_BUILD: '${{env.GITHUB_RUN_NUMBER}}' # $(Build.BuildNumber)
           - target: hl
             APT_PACKAGES: cmake ninja-build
           - target: cpp
@@ -40,8 +43,6 @@ jobs:
             DISPLAY: ':99.0'
             AUDIODEV: 'null'
           - target: neko
-    env:
-      TEST: ${{matrix.target}}
     steps:
       - uses: actions/checkout@master
         with:
