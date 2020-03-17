@@ -2,19 +2,19 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  linux-build:
-    runs-on: ubuntu-latest
-    env:
-      PLATFORM: linux64
-    steps:
-      - uses: actions/checkout@master
-        with:
-          submodules: recursive
+  # linux-build:
+  #   runs-on: ubuntu-latest
+  #   env:
+  #     PLATFORM: linux64
+  #   steps:
+  #     - uses: actions/checkout@master
+  #       with:
+  #         submodules: recursive
 
-      @import build-linux.yml
+  #     @import build-linux.yml
 
   linux-test:
-    needs: linux-build
+    # needs: linux-build
     runs-on: ubuntu-latest
     env:
       PLATFORM: linux64
@@ -47,21 +47,24 @@ jobs:
       - uses: actions/checkout@master
         with:
           submodules: recursive
-      - uses: actions/download-artifact@v1
-        with:
-          name: linuxBinaries
+      # - uses: actions/download-artifact@v1
+      #   with:
+      #     name: linuxBinaries
 
       @import install-neko.yml
 
       - name: Setup Haxe
         run: |
+          curl -sSL https://build.haxe.org/builds/haxe/linux64/haxe_latest.tar.gz -o ./haxe_latest.tar.gz
+          tar -xf ./haxe_latest.tar.gz -C ./
+          find . -depth -type d -name 'haxe_*' -exec mv {} linuxBinaries \;
+
           set -ex
-          tar -xf linuxBinaries/*_bin.tar.gz -C linuxBinaries --strip-components=1
           sudo mkdir -p /usr/local/bin/
           sudo mkdir -p /usr/local/share/haxe/
           sudo ln -s `pwd`/linuxBinaries/haxe /usr/local/bin/haxe
           sudo ln -s `pwd`/linuxBinaries/haxelib /usr/local/bin/haxelib
-          sudo ln -s `pwd`/linuxBinaries/std /usr/local/share/haxe/std
+          sudo ln -s `pwd`/std /usr/local/share/haxe/std
 
       - name: Print Haxe version
         run: haxe -version
