@@ -29,7 +29,7 @@ jobs:
             # SAUCE_TUNNEL_ID: 'linux-test'
             # SAUCE_BUILD: '${{env.GITHUB_RUN_NUMBER}}' # $(Build.BuildNumber)
           - target: hl
-            APT_PACKAGES: cmake ninja-build
+            APT_PACKAGES: cmake ninja-build libturbojpeg
           - target: cpp
             APT_PACKAGES: gcc-multilib g++-multilib
           - target: java
