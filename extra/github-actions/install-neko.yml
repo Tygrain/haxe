@@ -11,7 +11,8 @@
     Write-Host "::set-env name=NEKOPATH::$NEKOPATH"
 
 - name: Install Neko using snapshot from S3 (Unix)
-  if: (!startsWith(env.PLATFORM, 'windows'))
+  # if: (!startsWith(env.PLATFORM, 'windows'))
+  if: (startsWith(env.PLATFORM, 'linux'))
   run: |
     set -ex
     sudo add-apt-repository ppa:haxe/snapshots -y
@@ -28,13 +29,24 @@
     # sudo ln -s $NEKOPATH/{neko,nekoc,nekoml,nekotools}  /usr/local/bin/
     # sudo ln -s $NEKOPATH/libneko.*                      /usr/local/lib/
     # sudo ln -s $NEKOPATH/*.ndll                         /usr/local/lib/neko/
+    # sudo ln -s $NEKOPATH/nekoml.std                     /usr/local/lib/neko/
+    # sudo ln -s $NEKOPATH/include/*.h                    /usr/local/include/
     # set +x
-    # echo "::add-path::$NEKOPATH"
-    # echo "::set-env name=NEKOPATH::$NEKOPATH"
+    # echo ::add-path::$NEKOPATH
+    # echo ::set-env name=NEKOPATH::$NEKOPATH
+
+- name: Install Neko using snapshot from S3 (Mac)
+  if: (startsWith(env.PLATFORM, 'mac'))
+  run: |
+    set -ex
+    HOMEBREW_NO_AUTO_UPDATE=1
+    brew install neko
 
 - name: ldconfig
   if: env.PLATFORM == 'linux64'
-  run: sudo ldconfig
+  run: |
+    sudo ldconfig
+    sudo ldconfig /usr/local/lib
 
 - name: Print Neko version
   run: neko -version 2>&1

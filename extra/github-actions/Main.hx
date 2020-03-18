@@ -8,6 +8,7 @@ using StringTools;
 class Main {
 
 	static final matchImport = ~/^([ \t]*)@import (.+)$/gm;
+	static final matchRunnable = ~/^([ \t]*)jobs:/gm;
 
 	static function main():Void new Main();
 
@@ -18,8 +19,9 @@ class Main {
 		iterFolderItems(folder, (dir, name) -> {
 			final ext = Path.extension(name);
 			if (ext != "yaml" && ext != "yml") return;
+
 			final data = File.getContent('$dir/$name');
-			final newData = matchImport.map(data, reg -> {
+			var newData = matchImport.map(data, reg -> {
 				final spaces = reg.matched(1);
 				final path = reg.matched(2);
 				final template = File.getContent('./$path');
@@ -28,6 +30,9 @@ class Main {
 				lines.join("\n");
 			});
 
+			if (!matchRunnable.match(newData)) return;
+			final first = "# DO NOT EDIT. Generated from /extra/github-actions\n";
+			newData = first + newData;
 			final relativeDir = dir.replace(folder, "");
 			File.saveContent('$outFolder$relativeDir/$name', newData);
 		});

@@ -1,10 +1,9 @@
 - name: Install dependencies
   run: |
     set -ex
-    sudo add-apt-repository ppa:avsm/ppa -y # provides OPAM 2
-    sudo add-apt-repository ppa:haxe/ocaml -y # provides newer version of mbedtls
-    sudo apt-get update -qqy
-    sudo apt-get install -qqy ocaml-nox camlp5 opam libpcre3-dev zlib1g-dev libgtk2.0-dev libmbedtls-dev ninja-build neko neko-dev
+    brew update || brew update || brew update
+    brew unlink python@2
+    brew bundle --file=tests/Brewfile --no-upgrade
 
 - name: Install OCaml libraries
   run: |
@@ -20,22 +19,18 @@
   run: |
     set -ex
     eval $(opam env)
-    opam config exec -- make -s -j`nproc` STATICLINK=1 haxe
+    opam config exec -- make -s -j`sysctl -n hw.ncpu` STATICLINK=1 "LIB_PARAMS=/usr/local/opt/zlib/lib/libz.a /usr/local/lib/libpcre.a /usr/local/lib/libmbedtls.a /usr/local/lib/libmbedcrypto.a /usr/local/lib/libmbedx509.a -cclib '-framework Security -framework CoreFoundation'" haxe
     opam config exec -- make -s haxelib
     make
     # ls -l out
-    ldd -v ./haxe
-    ldd -v ./haxelib
+    otool -L ./haxe
+    otool -L ./haxelib
     mkdir out
     mv ./haxe ./out
     mv ./haxelib ./out
 
-# TODO Build xmldoc
-# - name: Build xmldoc
-#   run:
-
 - name: Upload artifact
   uses: actions/upload-artifact@v1.0.0
   with:
-    name: linuxBinaries
+    name: macBinaries
     path: out

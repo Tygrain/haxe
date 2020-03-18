@@ -13,19 +13,32 @@ jobs:
 
   #     @import build-linux.yml
 
+  mac-build:
+    runs-on: macos-latest
+    env:
+      PLATFORM: mac
+    steps:
+      - uses: actions/checkout@master
+        with:
+          submodules: recursive
+
+      @import install-neko.yml
+
+      @import build-mac.yml
+
   linux-test:
+    if: false
     # needs: linux-build
     runs-on: ubuntu-latest
     env:
       PLATFORM: linux64
       TEST: ${{matrix.target}}
-      # DISPLAY: ':99.0'
+      HXCPP_COMPILE_CACHE: ~/hxcache
     strategy:
       fail-fast: false
       matrix:
         target: [macro, js, hl, cpp, 'java,jvm', cs, php, python, lua, flash9, neko]
         include:
-          - target: macro
           - target: js
             # SAUCE: 1
             # SAUCE_TUNNEL_ID: 'linux-test'
@@ -34,15 +47,10 @@ jobs:
             APT_PACKAGES: cmake ninja-build
           - target: cpp
             APT_PACKAGES: gcc-multilib g++-multilib
-          - target: 'java,jvm'
-          - target: cs
-          - target: php
-          - target: python
           - target: lua
             APT_PACKAGES: ncurses-dev
           - target: flash9
             APT_PACKAGES: libglib2.0 libfreetype6 xvfb
-          - target: neko
     steps:
       - uses: actions/checkout@master
         with:
@@ -53,53 +61,32 @@ jobs:
 
       @import install-neko.yml
 
-      - name: Setup Haxe
-        run: |
-          curl -sSL https://build.haxe.org/builds/haxe/linux64/haxe_latest.tar.gz -o ./haxe_latest.tar.gz
-          tar -xf ./haxe_latest.tar.gz -C ./
-          find . -depth -type d -name 'haxe_*' -exec mv {} linuxBinaries \;
+      @import test-linux.yml
 
-          set -ex
-          sudo mkdir -p /usr/local/bin/
-          sudo mkdir -p /usr/local/share/haxe/
-          sudo ln -s `pwd`/linuxBinaries/haxe /usr/local/bin/haxe
-          sudo ln -s `pwd`/linuxBinaries/haxelib /usr/local/bin/haxelib
-          sudo ln -s `pwd`/std /usr/local/share/haxe/std
+  mac-test:
+    # needs: mac-build
+    runs-on: macos-latest
+    env:
+      PLATFORM: mac
+      TEST: ${{matrix.target}}
+      HXCPP_COMPILE_CACHE: ~/hxcache
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [macro, js, hl, cpp, 'java,jvm', cs, php, python, lua, flash9, neko]
+        include:
+          - target: hl
+            BREW_PACKAGES: ninja
+    steps:
+      - uses: actions/checkout@master
+        with:
+          submodules: recursive
+      # - uses: actions/download-artifact@v1
+      #   with:
+      #     name: macBinaries
 
-      - name: Print Haxe version
-        run: haxe -version
+      @import install-neko.yml
 
-      - name: Setup haxelib
-        run: |
-          set -ex
-          mkdir ~/haxelib
-          haxelib setup ~/haxelib
-
-      - name: Install apt packages
-        if: matrix.APT_PACKAGES
-        run: |
-          set -ex
-          sudo apt update -qqy
-          sudo apt install -qqy ${{matrix.APT_PACKAGES}}
-
-      - name: Flash setup
-        if: matrix.target == 'flash9'
-        run: export DISPLAY=:99.0
-
-      - name: Hl check
-        if: matrix.target == 'hl'
-        run: sudo apt-get install libpng-dev libturbojpeg-dev libvorbis-dev libopenal-dev libsdl2-dev libmbedtls-dev libuv1-dev
-
-      - name: Test
-        if: success() && !(matrix.SAUCE && matrix.SAUCE_ACCESS_KEY)
-        run: haxe RunCi.hxml
-        working-directory: ${{github.workspace}}/tests
-
-      - name: Test (with SauceLabs)
-        if: matrix.target == 'js' && success() && matrix.SAUCE && matrix.SAUCE_ACCESS_KEY
-        run: haxe RunCi.hxml
-        working-directory: ${{github.workspace}}/tests
-        env:
-          SAUCE_ACCESS_KEY: matrix.SAUCE_ACCESS_KEY
+      @import test-mac.yml
 
 

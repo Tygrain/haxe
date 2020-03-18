@@ -1,0 +1,31 @@
+- name: Setup Haxe
+  run: |
+    curl -sSL https://build.haxe.org/builds/haxe/mac/haxe_latest.tar.gz -o ./haxe_latest.tar.gz
+    tar -xf ./haxe_latest.tar.gz -C ./
+    find . -depth -type d -name 'haxe_*' -exec mv {} macBinaries \;
+
+    set -ex
+    sudo mkdir -p /usr/local/bin/
+    sudo mkdir -p /usr/local/share/haxe/
+    sudo ln -s `pwd`/macBinaries/haxe /usr/local/bin/haxe
+    sudo ln -s `pwd`/macBinaries/haxelib /usr/local/bin/haxelib
+    # sudo ln -s `pwd`/macBinaries/std /usr/local/share/haxe/std
+    sudo ln -s `pwd`/std /usr/local/share/haxe/std
+
+- name: Print Haxe version
+  run: haxe -version
+
+- name: Setup haxelib
+  run: |
+    set -ex
+    mkdir ~/haxelib
+    haxelib setup ~/haxelib
+
+- name: Install homebrew packages
+  if: matrix.BREW_PACKAGES
+  run: brew install ${{matrix.BREW_PACKAGES}}
+
+- name: Test
+  run: haxe RunCi.hxml
+  working-directory: ${{github.workspace}}/tests
+
