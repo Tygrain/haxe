@@ -4,7 +4,7 @@
   run: |
     $DOWNLOADDIR="./temp"
     new-item -Name $DOWNLOADDIR -ItemType directory
-    Invoke-WebRequest https://build.haxe.org/builds/neko/$PLATFORM/neko_latest.zip -OutFile $DOWNLOADDIR/neko_latest.zip
+    Invoke-WebRequest https://build.haxe.org/builds/neko/$env:PLATFORM/neko_latest.zip -OutFile $DOWNLOADDIR/neko_latest.zip
     Expand-Archive $DOWNLOADDIR/neko_latest.zip -DestinationPath $DOWNLOADDIR
     $NEKOPATH = Get-ChildItem $DOWNLOADDIR/neko-*-*
     Write-Host "::add-path::$NEKOPATH"

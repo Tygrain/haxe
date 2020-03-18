@@ -1,0 +1,43 @@
+# - name: Quick test
+#   run: |
+#     curl -sSL https://build.haxe.org/builds/haxe/windows64/haxe_latest.zip -o ./haxe_latest.zip
+#     unzip -qq ./haxe_latest.zip
+# - shell: pwsh
+#   run: |
+#     $dir = Get-ChildItem ./haxe_*_* -Name -Directory
+#     Rename-Item ./$dir haxe
+
+- name: Setup Haxe
+  shell: pwsh
+  run: |
+    Set-PSDebug -Trace 2
+    $dir = '' + ( get-location ) + "/win$($env:ARCH)Binaries"
+    echo "$dir"
+    dir $dir
+    Set-PSDebug -Trace 0
+    $env:PATH = "$dir;$env:PATH"
+    Write-Host "::add-path::$dir"
+
+- name: Print Haxe version
+  shell: pwsh
+  run: haxe -version
+
+- name: "Make Python 3 be available as python3 in the cmdline"
+  shell: pwsh
+  run: |
+    Set-PSDebug -Trace 1
+    $pypath = python -c "import sys; print(sys.executable)"
+    $py3path = $pypath.replace("python.exe","python3.exe")
+    cmd /c mklink $py3path $pypath
+    python3 -V
+
+- name: Setup haxelib
+  shell: pwsh
+  run: |
+    mkdir "$($env:HAXELIB_ROOT)"
+    haxelib setup "$($env:HAXELIB_ROOT)"
+
+- name: Test
+  shell: pwsh
+  run: haxe RunCi.hxml
+  working-directory: ${{github.workspace}}/tests

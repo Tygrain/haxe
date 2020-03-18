@@ -3,21 +3,16 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  # linux-build:
-  #   runs-on: ubuntu-latest
-  #   env:
-  #     PLATFORM: linux64
-  #   steps:
-  #     - uses: actions/checkout@master
-  #       with:
-  #         submodules: recursive
 
-  #     @import build-linux.yml
-
-  mac-build:
-    runs-on: macos-latest
+  windows64-build:
+    runs-on: windows-latest
     env:
-      PLATFORM: mac
+      PLATFORM: windows64
+      CYG_MIRROR: http://mirrors.kernel.org/sourceware/cygwin/
+      ARCH: 64
+      MINGW_ARCH: x86_64
+      CYGWIN_SETUP: https://cygwin.com/setup-x86_64.exe
+      CYG_ROOT: C:/cygwin64
     steps:
       - uses: actions/checkout@master
         with:
@@ -29,7 +24,7 @@ jobs:
         run: |
           $DOWNLOADDIR="./temp"
           new-item -Name $DOWNLOADDIR -ItemType directory
-          Invoke-WebRequest https://build.haxe.org/builds/neko/$PLATFORM/neko_latest.zip -OutFile $DOWNLOADDIR/neko_latest.zip
+          Invoke-WebRequest https://build.haxe.org/builds/neko/$env:PLATFORM/neko_latest.zip -OutFile $DOWNLOADDIR/neko_latest.zip
           Expand-Archive $DOWNLOADDIR/neko_latest.zip -DestinationPath $DOWNLOADDIR
           $NEKOPATH = Get-ChildItem $DOWNLOADDIR/neko-*-*
           Write-Host "::add-path::$NEKOPATH"
@@ -77,7 +72,305 @@ jobs:
         run: neko -version 2>&1
       
       
+      - name: choco install nsis
+        shell: pwsh
+        run: choco install --no-progress nsis.portable --version 3.02 -y
+      - name: choco install things
+        shell: pwsh
+        run: choco install --no-progress curl wget 7zip.portable -y
+      - name: Prepend Chocolatey path
+        shell: pwsh
+        run: Write-Host "::add-path::C:\ProgramData\chocolatey\bin"
+      
+      - name: Install OCaml and OCaml libraries
+        shell: pwsh
+        run: |
+          Set-PSDebug -Trace 1
+          curl.exe -fsSL -o cygwin-setup.exe --retry 3 $($env:CYGWIN_SETUP)
+          Start-Process -FilePath "cygwin-setup.exe" -ArgumentList "-B -q -R $($env:CYG_ROOT) -l C:/tmp -s $($env:CYG_MIRROR) -P default -P make -P git -P zlib-devel -P rsync -P patch -P diffutils -P curl -P unzip -P tar -P m4 -P perl -P libpcre-devel -P mbedtls-devel -P mingw64-$($env:MINGW_ARCH)-zlib -P mingw64-$($env:MINGW_ARCH)-gcc-core -P mingw64-$($env:MINGW_ARCH)-pcre" -Wait
+          curl.exe -fsSL -o "opam.tar.xz" --retry 3 https://github.com/fdopen/opam-repository-mingw/releases/download/0.0.0.2/opam$($env:ARCH).tar.xz
+          curl.exe -fsSL -o "libmbedtls.tar.xz" --retry 3 https://github.com/Simn/mingw64-mbedtls/releases/download/2.16.3/mingw64-$($env:MINGW_ARCH)-mbedtls-2.16.3-1.tar.xz
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'echo "$OLDPWD"')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && tar -C / -xvf libmbedtls.tar.xz')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && tar -xf opam.tar.xz')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && bash opam${ARCH}/install.sh')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'opam init mingw "https://github.com/fdopen/opam-repository-mingw.git#opam2" --comp 4.07.0+mingw${ARCH}c --switch 4.07.0+mingw${ARCH}c --auto-setup --yes 2>&1')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'opam update --yes 2>&1')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && opam pin add haxe . --kind=path --no-action --yes 2>&1')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'opam install haxe --deps-only --yes 2>&1')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'opam list')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'ocamlopt -v')
+      
+      - name: Expose mingw dll files
+        shell: pwsh
+        run: Write-Host "::add-path::${env:CYG_ROOT}/usr/$($env:MINGW_ARCH)-w64-mingw32/sys-root/mingw/bin"
+      
+      - name: Build Haxe
+        shell: pwsh
+        run: |
+          Set-PSDebug -Trace 1
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && opam config exec -- make -s -f Makefile.win -j`nproc` haxe 2>&1')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && opam config exec -- make -s -f Makefile.win haxelib 2>&1')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && opam config exec -- make -f Makefile.win echo_package_files package_bin package_installer_win package_choco 2>&1')
+          dir out
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && cygcheck ./haxe.exe')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && cygcheck ./haxelib.exe')
+      
+      - name: Move haxe binaries
+        shell: pwsh
+        run: |
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && mkdir ./out')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && mv ./haxe.exe ./out')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && mv ./haxelib.exe ./out')
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v1.0.0
+        with:
+          name: win${{env.ARCH}}Binaries
+          path: out
+      
 
+  windows-build:
+    runs-on: windows-latest
+    env:
+      PLATFORM: windows
+      CYG_MIRROR: http://mirrors.kernel.org/sourceware/cygwin/
+      ARCH: 32
+      MINGW_ARCH: i686
+      CYGWIN_SETUP: https://cygwin.com/setup-x86.exe
+      CYG_ROOT: C:/cygwin
+    steps:
+      - uses: actions/checkout@master
+        with:
+          submodules: recursive
+
+      - name: Install Neko using snapshot from S3 (Windows)
+        if: startsWith(env.PLATFORM, 'windows')
+        shell: pwsh
+        run: |
+          $DOWNLOADDIR="./temp"
+          new-item -Name $DOWNLOADDIR -ItemType directory
+          Invoke-WebRequest https://build.haxe.org/builds/neko/$env:PLATFORM/neko_latest.zip -OutFile $DOWNLOADDIR/neko_latest.zip
+          Expand-Archive $DOWNLOADDIR/neko_latest.zip -DestinationPath $DOWNLOADDIR
+          $NEKOPATH = Get-ChildItem $DOWNLOADDIR/neko-*-*
+          Write-Host "::add-path::$NEKOPATH"
+          Write-Host "::set-env name=NEKOPATH::$NEKOPATH"
+      
+      - name: Install Neko using snapshot from S3 (Unix)
+        # if: (!startsWith(env.PLATFORM, 'windows'))
+        if: (startsWith(env.PLATFORM, 'linux'))
+        run: |
+          set -ex
+          sudo add-apt-repository ppa:haxe/snapshots -y
+          sudo apt-get update -qqy
+          sudo apt-get install -qqy neko
+      
+          # DOWNLOADDIR="./temp"
+          # mkdir $DOWNLOADDIR
+          # curl -sSL https://build.haxe.org/builds/neko/$PLATFORM/neko_latest.tar.gz -o $DOWNLOADDIR/neko_latest.tar.gz
+          # tar -xf $DOWNLOADDIR/neko_latest.tar.gz -C $DOWNLOADDIR
+          # NEKOPATH=`echo $DOWNLOADDIR/neko-*-*`
+          # sudo mkdir -p /usr/local/bin
+          # sudo mkdir -p /usr/local/lib/neko
+          # sudo ln -s $NEKOPATH/{neko,nekoc,nekoml,nekotools}  /usr/local/bin/
+          # sudo ln -s $NEKOPATH/libneko.*                      /usr/local/lib/
+          # sudo ln -s $NEKOPATH/*.ndll                         /usr/local/lib/neko/
+          # sudo ln -s $NEKOPATH/nekoml.std                     /usr/local/lib/neko/
+          # sudo ln -s $NEKOPATH/include/*.h                    /usr/local/include/
+          # set +x
+          # echo ::add-path::$NEKOPATH
+          # echo ::set-env name=NEKOPATH::$NEKOPATH
+      
+      - name: Install Neko using snapshot from S3 (Mac)
+        if: (startsWith(env.PLATFORM, 'mac'))
+        run: |
+          set -ex
+          HOMEBREW_NO_AUTO_UPDATE=1
+          brew install neko
+      
+      - name: ldconfig
+        if: env.PLATFORM == 'linux64'
+        run: |
+          sudo ldconfig
+          sudo ldconfig /usr/local/lib
+      
+      - name: Print Neko version
+        run: neko -version 2>&1
+      
+      
+      - name: choco install nsis
+        shell: pwsh
+        run: choco install --no-progress nsis.portable --version 3.02 -y
+      - name: choco install things
+        shell: pwsh
+        run: choco install --no-progress curl wget 7zip.portable -y
+      - name: Prepend Chocolatey path
+        shell: pwsh
+        run: Write-Host "::add-path::C:\ProgramData\chocolatey\bin"
+      
+      - name: Install OCaml and OCaml libraries
+        shell: pwsh
+        run: |
+          Set-PSDebug -Trace 1
+          curl.exe -fsSL -o cygwin-setup.exe --retry 3 $($env:CYGWIN_SETUP)
+          Start-Process -FilePath "cygwin-setup.exe" -ArgumentList "-B -q -R $($env:CYG_ROOT) -l C:/tmp -s $($env:CYG_MIRROR) -P default -P make -P git -P zlib-devel -P rsync -P patch -P diffutils -P curl -P unzip -P tar -P m4 -P perl -P libpcre-devel -P mbedtls-devel -P mingw64-$($env:MINGW_ARCH)-zlib -P mingw64-$($env:MINGW_ARCH)-gcc-core -P mingw64-$($env:MINGW_ARCH)-pcre" -Wait
+          curl.exe -fsSL -o "opam.tar.xz" --retry 3 https://github.com/fdopen/opam-repository-mingw/releases/download/0.0.0.2/opam$($env:ARCH).tar.xz
+          curl.exe -fsSL -o "libmbedtls.tar.xz" --retry 3 https://github.com/Simn/mingw64-mbedtls/releases/download/2.16.3/mingw64-$($env:MINGW_ARCH)-mbedtls-2.16.3-1.tar.xz
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'echo "$OLDPWD"')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && tar -C / -xvf libmbedtls.tar.xz')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && tar -xf opam.tar.xz')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && bash opam${ARCH}/install.sh')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'opam init mingw "https://github.com/fdopen/opam-repository-mingw.git#opam2" --comp 4.07.0+mingw${ARCH}c --switch 4.07.0+mingw${ARCH}c --auto-setup --yes 2>&1')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'opam update --yes 2>&1')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && opam pin add haxe . --kind=path --no-action --yes 2>&1')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'opam install haxe --deps-only --yes 2>&1')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'opam list')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'ocamlopt -v')
+      
+      - name: Expose mingw dll files
+        shell: pwsh
+        run: Write-Host "::add-path::${env:CYG_ROOT}/usr/$($env:MINGW_ARCH)-w64-mingw32/sys-root/mingw/bin"
+      
+      - name: Build Haxe
+        shell: pwsh
+        run: |
+          Set-PSDebug -Trace 1
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && opam config exec -- make -s -f Makefile.win -j`nproc` haxe 2>&1')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && opam config exec -- make -s -f Makefile.win haxelib 2>&1')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && opam config exec -- make -f Makefile.win echo_package_files package_bin package_installer_win package_choco 2>&1')
+          dir out
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && cygcheck ./haxe.exe')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && cygcheck ./haxelib.exe')
+      
+      - name: Move haxe binaries
+        shell: pwsh
+        run: |
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && mkdir ./out')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && mv ./haxe.exe ./out')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && mv ./haxelib.exe ./out')
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v1.0.0
+        with:
+          name: win${{env.ARCH}}Binaries
+          path: out
+      
+
+  linux-build:
+    runs-on: ubuntu-latest
+    env:
+      PLATFORM: linux64
+    steps:
+      - uses: actions/checkout@master
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          set -ex
+          sudo add-apt-repository ppa:avsm/ppa -y # provides OPAM 2
+          sudo add-apt-repository ppa:haxe/ocaml -y # provides newer version of mbedtls
+          sudo apt-get update -qqy
+          sudo apt-get install -qqy ocaml-nox camlp5 opam libpcre3-dev zlib1g-dev libgtk2.0-dev libmbedtls-dev ninja-build neko neko-dev
+      
+      - name: Install OCaml libraries
+        run: |
+          set -ex
+          opam init --yes --disable-sandboxing
+          opam update
+          opam pin add haxe . --no-action
+          opam install haxe --deps-only --yes
+          opam list
+          ocamlopt -v
+      
+      - name: Build Haxe
+        run: |
+          set -ex
+          eval $(opam env)
+          opam config exec -- make -s -j`nproc` STATICLINK=1 haxe
+          opam config exec -- make -s haxelib
+          make
+          # ls -l out
+          ldd -v ./haxe
+          ldd -v ./haxelib
+          mkdir out
+          mv ./haxe ./out
+          mv ./haxelib ./out
+      
+      # TODO Build xmldoc
+      # - name: Build xmldoc
+      #   run:
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v1.0.0
+        with:
+          name: linuxBinaries
+          path: out
+      
+
+  mac-build:
+    runs-on: macos-latest
+    env:
+      PLATFORM: mac
+    steps:
+      - uses: actions/checkout@master
+        with:
+          submodules: recursive
+
+      - name: Install Neko using snapshot from S3 (Windows)
+        if: startsWith(env.PLATFORM, 'windows')
+        shell: pwsh
+        run: |
+          $DOWNLOADDIR="./temp"
+          new-item -Name $DOWNLOADDIR -ItemType directory
+          Invoke-WebRequest https://build.haxe.org/builds/neko/$env:PLATFORM/neko_latest.zip -OutFile $DOWNLOADDIR/neko_latest.zip
+          Expand-Archive $DOWNLOADDIR/neko_latest.zip -DestinationPath $DOWNLOADDIR
+          $NEKOPATH = Get-ChildItem $DOWNLOADDIR/neko-*-*
+          Write-Host "::add-path::$NEKOPATH"
+          Write-Host "::set-env name=NEKOPATH::$NEKOPATH"
+      
+      - name: Install Neko using snapshot from S3 (Unix)
+        # if: (!startsWith(env.PLATFORM, 'windows'))
+        if: (startsWith(env.PLATFORM, 'linux'))
+        run: |
+          set -ex
+          sudo add-apt-repository ppa:haxe/snapshots -y
+          sudo apt-get update -qqy
+          sudo apt-get install -qqy neko
+      
+          # DOWNLOADDIR="./temp"
+          # mkdir $DOWNLOADDIR
+          # curl -sSL https://build.haxe.org/builds/neko/$PLATFORM/neko_latest.tar.gz -o $DOWNLOADDIR/neko_latest.tar.gz
+          # tar -xf $DOWNLOADDIR/neko_latest.tar.gz -C $DOWNLOADDIR
+          # NEKOPATH=`echo $DOWNLOADDIR/neko-*-*`
+          # sudo mkdir -p /usr/local/bin
+          # sudo mkdir -p /usr/local/lib/neko
+          # sudo ln -s $NEKOPATH/{neko,nekoc,nekoml,nekotools}  /usr/local/bin/
+          # sudo ln -s $NEKOPATH/libneko.*                      /usr/local/lib/
+          # sudo ln -s $NEKOPATH/*.ndll                         /usr/local/lib/neko/
+          # sudo ln -s $NEKOPATH/nekoml.std                     /usr/local/lib/neko/
+          # sudo ln -s $NEKOPATH/include/*.h                    /usr/local/include/
+          # set +x
+          # echo ::add-path::$NEKOPATH
+          # echo ::set-env name=NEKOPATH::$NEKOPATH
+      
+      - name: Install Neko using snapshot from S3 (Mac)
+        if: (startsWith(env.PLATFORM, 'mac'))
+        run: |
+          set -ex
+          HOMEBREW_NO_AUTO_UPDATE=1
+          brew install neko
+      
+      - name: ldconfig
+        if: env.PLATFORM == 'linux64'
+        run: |
+          sudo ldconfig
+          sudo ldconfig /usr/local/lib
+      
+      - name: Print Neko version
+        run: neko -version 2>&1
+      
+      
       - name: Install dependencies
         run: |
           set -ex
@@ -116,38 +409,27 @@ jobs:
           path: out
       
 
-  linux-test:
-    if: false
-    # needs: linux-build
-    runs-on: ubuntu-latest
+  windows64-test:
+    needs: windows64-build
+    runs-on: windows-latest
     env:
-      PLATFORM: linux64
+      PLATFORM: windows64
       TEST: ${{matrix.target}}
       HXCPP_COMPILE_CACHE: ~/hxcache
+      ARCH: 64
+      HAXELIB_ROOT: C:/haxelib
     strategy:
       fail-fast: false
       matrix:
-        target: [macro, js, hl, cpp, 'java,jvm', cs, php, python, lua, flash9, neko]
-        include:
-          - target: js
-            # SAUCE: 1
-            # SAUCE_TUNNEL_ID: 'linux-test'
-            # SAUCE_BUILD: '${{env.GITHUB_RUN_NUMBER}}' # $(Build.BuildNumber)
-          - target: hl
-            APT_PACKAGES: cmake ninja-build
-          - target: cpp
-            APT_PACKAGES: gcc-multilib g++-multilib
-          - target: lua
-            APT_PACKAGES: ncurses-dev
-          - target: flash9
-            APT_PACKAGES: libglib2.0 libfreetype6 xvfb
+        # TODO. Lua/flash has never been enabled on our AppVeyor builds.
+        target: [macro, js, hl, cpp, 'java,jvm', cs, php, python, neko]
     steps:
       - uses: actions/checkout@master
         with:
           submodules: recursive
-      # - uses: actions/download-artifact@v1
-      #   with:
-      #     name: linuxBinaries
+      - uses: actions/download-artifact@v1
+        with:
+          name: win${{env.ARCH}}Binaries
 
       - name: Install Neko using snapshot from S3 (Windows)
         if: startsWith(env.PLATFORM, 'windows')
@@ -155,7 +437,7 @@ jobs:
         run: |
           $DOWNLOADDIR="./temp"
           new-item -Name $DOWNLOADDIR -ItemType directory
-          Invoke-WebRequest https://build.haxe.org/builds/neko/$PLATFORM/neko_latest.zip -OutFile $DOWNLOADDIR/neko_latest.zip
+          Invoke-WebRequest https://build.haxe.org/builds/neko/$env:PLATFORM/neko_latest.zip -OutFile $DOWNLOADDIR/neko_latest.zip
           Expand-Archive $DOWNLOADDIR/neko_latest.zip -DestinationPath $DOWNLOADDIR
           $NEKOPATH = Get-ChildItem $DOWNLOADDIR/neko-*-*
           Write-Host "::add-path::$NEKOPATH"
@@ -203,14 +485,266 @@ jobs:
         run: neko -version 2>&1
       
       
+      # - name: Quick test
+      #   run: |
+      #     curl -sSL https://build.haxe.org/builds/haxe/windows64/haxe_latest.zip -o ./haxe_latest.zip
+      #     unzip -qq ./haxe_latest.zip
+      # - shell: pwsh
+      #   run: |
+      #     $dir = Get-ChildItem ./haxe_*_* -Name -Directory
+      #     Rename-Item ./$dir haxe
+      
+      - name: Setup Haxe
+        shell: pwsh
+        run: |
+          Set-PSDebug -Trace 2
+          $dir = '' + ( get-location ) + "/win$($env:ARCH)Binaries"
+          echo "$dir"
+          dir $dir
+          Set-PSDebug -Trace 0
+          $env:PATH = "$dir;$env:PATH"
+          Write-Host "::add-path::$dir"
+      
+      - name: Print Haxe version
+        shell: pwsh
+        run: haxe -version
+      
+      - name: "Make Python 3 be available as python3 in the cmdline"
+        shell: pwsh
+        run: |
+          Set-PSDebug -Trace 1
+          $pypath = python -c "import sys; print(sys.executable)"
+          $py3path = $pypath.replace("python.exe","python3.exe")
+          cmd /c mklink $py3path $pypath
+          python3 -V
+      
+      - name: Setup haxelib
+        shell: pwsh
+        run: |
+          mkdir "$($env:HAXELIB_ROOT)"
+          haxelib setup "$($env:HAXELIB_ROOT)"
+      
+      - name: Test
+        shell: pwsh
+        run: haxe RunCi.hxml
+        working-directory: ${{github.workspace}}/tests
+      
 
+  windows-test:
+    needs: windows-build
+    runs-on: windows-latest
+    env:
+      PLATFORM: windows
+      TEST: ${{matrix.target}}
+      HXCPP_COMPILE_CACHE: ~/hxcache
+      ARCH: 32
+      HAXELIB_ROOT: C:/haxelib
+    strategy:
+      fail-fast: false
+      matrix:
+        # TODO. Lua/flash has never been enabled on our AppVeyor builds.
+        target: [macro, js, hl, cpp, 'java,jvm', cs, php, python, neko]
+    steps:
+      - uses: actions/checkout@master
+        with:
+          submodules: recursive
+      - uses: actions/download-artifact@v1
+        with:
+          name: win${{env.ARCH}}Binaries
+
+      - name: Install Neko using snapshot from S3 (Windows)
+        if: startsWith(env.PLATFORM, 'windows')
+        shell: pwsh
+        run: |
+          $DOWNLOADDIR="./temp"
+          new-item -Name $DOWNLOADDIR -ItemType directory
+          Invoke-WebRequest https://build.haxe.org/builds/neko/$env:PLATFORM/neko_latest.zip -OutFile $DOWNLOADDIR/neko_latest.zip
+          Expand-Archive $DOWNLOADDIR/neko_latest.zip -DestinationPath $DOWNLOADDIR
+          $NEKOPATH = Get-ChildItem $DOWNLOADDIR/neko-*-*
+          Write-Host "::add-path::$NEKOPATH"
+          Write-Host "::set-env name=NEKOPATH::$NEKOPATH"
+      
+      - name: Install Neko using snapshot from S3 (Unix)
+        # if: (!startsWith(env.PLATFORM, 'windows'))
+        if: (startsWith(env.PLATFORM, 'linux'))
+        run: |
+          set -ex
+          sudo add-apt-repository ppa:haxe/snapshots -y
+          sudo apt-get update -qqy
+          sudo apt-get install -qqy neko
+      
+          # DOWNLOADDIR="./temp"
+          # mkdir $DOWNLOADDIR
+          # curl -sSL https://build.haxe.org/builds/neko/$PLATFORM/neko_latest.tar.gz -o $DOWNLOADDIR/neko_latest.tar.gz
+          # tar -xf $DOWNLOADDIR/neko_latest.tar.gz -C $DOWNLOADDIR
+          # NEKOPATH=`echo $DOWNLOADDIR/neko-*-*`
+          # sudo mkdir -p /usr/local/bin
+          # sudo mkdir -p /usr/local/lib/neko
+          # sudo ln -s $NEKOPATH/{neko,nekoc,nekoml,nekotools}  /usr/local/bin/
+          # sudo ln -s $NEKOPATH/libneko.*                      /usr/local/lib/
+          # sudo ln -s $NEKOPATH/*.ndll                         /usr/local/lib/neko/
+          # sudo ln -s $NEKOPATH/nekoml.std                     /usr/local/lib/neko/
+          # sudo ln -s $NEKOPATH/include/*.h                    /usr/local/include/
+          # set +x
+          # echo ::add-path::$NEKOPATH
+          # echo ::set-env name=NEKOPATH::$NEKOPATH
+      
+      - name: Install Neko using snapshot from S3 (Mac)
+        if: (startsWith(env.PLATFORM, 'mac'))
+        run: |
+          set -ex
+          HOMEBREW_NO_AUTO_UPDATE=1
+          brew install neko
+      
+      - name: ldconfig
+        if: env.PLATFORM == 'linux64'
+        run: |
+          sudo ldconfig
+          sudo ldconfig /usr/local/lib
+      
+      - name: Print Neko version
+        run: neko -version 2>&1
+      
+      
+      # - name: Quick test
+      #   run: |
+      #     curl -sSL https://build.haxe.org/builds/haxe/windows64/haxe_latest.zip -o ./haxe_latest.zip
+      #     unzip -qq ./haxe_latest.zip
+      # - shell: pwsh
+      #   run: |
+      #     $dir = Get-ChildItem ./haxe_*_* -Name -Directory
+      #     Rename-Item ./$dir haxe
+      
+      - name: Setup Haxe
+        shell: pwsh
+        run: |
+          Set-PSDebug -Trace 2
+          $dir = '' + ( get-location ) + "/win$($env:ARCH)Binaries"
+          echo "$dir"
+          dir $dir
+          Set-PSDebug -Trace 0
+          $env:PATH = "$dir;$env:PATH"
+          Write-Host "::add-path::$dir"
+      
+      - name: Print Haxe version
+        shell: pwsh
+        run: haxe -version
+      
+      - name: "Make Python 3 be available as python3 in the cmdline"
+        shell: pwsh
+        run: |
+          Set-PSDebug -Trace 1
+          $pypath = python -c "import sys; print(sys.executable)"
+          $py3path = $pypath.replace("python.exe","python3.exe")
+          cmd /c mklink $py3path $pypath
+          python3 -V
+      
+      - name: Setup haxelib
+        shell: pwsh
+        run: |
+          mkdir "$($env:HAXELIB_ROOT)"
+          haxelib setup "$($env:HAXELIB_ROOT)"
+      
+      - name: Test
+        shell: pwsh
+        run: haxe RunCi.hxml
+        working-directory: ${{github.workspace}}/tests
+      
+
+  linux-test:
+    needs: linux-build
+    runs-on: ubuntu-latest
+    env:
+      PLATFORM: linux64
+      TEST: ${{matrix.target}}
+      HXCPP_COMPILE_CACHE: ~/hxcache
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [macro, js, hl, cpp, 'java,jvm', cs, php, python, lua, flash9, neko]
+        include:
+          - target: js
+            # SAUCE: 1
+            # SAUCE_TUNNEL_ID: 'linux-test'
+            # SAUCE_BUILD: '${{env.GITHUB_RUN_NUMBER}}' # $(Build.BuildNumber)
+          - target: hl
+            APT_PACKAGES: cmake ninja-build
+          - target: cpp
+            APT_PACKAGES: gcc-multilib g++-multilib
+          - target: lua
+            APT_PACKAGES: ncurses-dev
+          - target: flash9
+            APT_PACKAGES: libglib2.0 libfreetype6 xvfb
+    steps:
+      - uses: actions/checkout@master
+        with:
+          submodules: recursive
+      - uses: actions/download-artifact@v1
+        with:
+          name: linuxBinaries
+
+      - name: Install Neko using snapshot from S3 (Windows)
+        if: startsWith(env.PLATFORM, 'windows')
+        shell: pwsh
+        run: |
+          $DOWNLOADDIR="./temp"
+          new-item -Name $DOWNLOADDIR -ItemType directory
+          Invoke-WebRequest https://build.haxe.org/builds/neko/$env:PLATFORM/neko_latest.zip -OutFile $DOWNLOADDIR/neko_latest.zip
+          Expand-Archive $DOWNLOADDIR/neko_latest.zip -DestinationPath $DOWNLOADDIR
+          $NEKOPATH = Get-ChildItem $DOWNLOADDIR/neko-*-*
+          Write-Host "::add-path::$NEKOPATH"
+          Write-Host "::set-env name=NEKOPATH::$NEKOPATH"
+      
+      - name: Install Neko using snapshot from S3 (Unix)
+        # if: (!startsWith(env.PLATFORM, 'windows'))
+        if: (startsWith(env.PLATFORM, 'linux'))
+        run: |
+          set -ex
+          sudo add-apt-repository ppa:haxe/snapshots -y
+          sudo apt-get update -qqy
+          sudo apt-get install -qqy neko
+      
+          # DOWNLOADDIR="./temp"
+          # mkdir $DOWNLOADDIR
+          # curl -sSL https://build.haxe.org/builds/neko/$PLATFORM/neko_latest.tar.gz -o $DOWNLOADDIR/neko_latest.tar.gz
+          # tar -xf $DOWNLOADDIR/neko_latest.tar.gz -C $DOWNLOADDIR
+          # NEKOPATH=`echo $DOWNLOADDIR/neko-*-*`
+          # sudo mkdir -p /usr/local/bin
+          # sudo mkdir -p /usr/local/lib/neko
+          # sudo ln -s $NEKOPATH/{neko,nekoc,nekoml,nekotools}  /usr/local/bin/
+          # sudo ln -s $NEKOPATH/libneko.*                      /usr/local/lib/
+          # sudo ln -s $NEKOPATH/*.ndll                         /usr/local/lib/neko/
+          # sudo ln -s $NEKOPATH/nekoml.std                     /usr/local/lib/neko/
+          # sudo ln -s $NEKOPATH/include/*.h                    /usr/local/include/
+          # set +x
+          # echo ::add-path::$NEKOPATH
+          # echo ::set-env name=NEKOPATH::$NEKOPATH
+      
+      - name: Install Neko using snapshot from S3 (Mac)
+        if: (startsWith(env.PLATFORM, 'mac'))
+        run: |
+          set -ex
+          HOMEBREW_NO_AUTO_UPDATE=1
+          brew install neko
+      
+      - name: ldconfig
+        if: env.PLATFORM == 'linux64'
+        run: |
+          sudo ldconfig
+          sudo ldconfig /usr/local/lib
+      
+      - name: Print Neko version
+        run: neko -version 2>&1
+      
+      
       - name: Setup Haxe
         run: |
-          curl -sSL https://build.haxe.org/builds/haxe/linux64/haxe_latest.tar.gz -o ./haxe_latest.tar.gz
-          tar -xf ./haxe_latest.tar.gz -C ./
-          find . -depth -type d -name 'haxe_*' -exec mv {} linuxBinaries \;
+          # curl -sSL https://build.haxe.org/builds/haxe/linux64/haxe_latest.tar.gz -o ./haxe_latest.tar.gz
+          # tar -xf ./haxe_latest.tar.gz -C ./
+          # find . -depth -type d -name 'haxe_*' -exec mv {} linuxBinaries \;
       
           set -ex
+          chmod -R a+x `pwd`/linuxBinaries
           sudo mkdir -p /usr/local/bin/
           sudo mkdir -p /usr/local/share/haxe/
           sudo ln -s `pwd`/linuxBinaries/haxe /usr/local/bin/haxe
@@ -252,7 +786,7 @@ jobs:
       
 
   mac-test:
-    # needs: mac-build
+    needs: mac-build
     runs-on: macos-latest
     env:
       PLATFORM: mac
@@ -269,9 +803,9 @@ jobs:
       - uses: actions/checkout@master
         with:
           submodules: recursive
-      # - uses: actions/download-artifact@v1
-      #   with:
-      #     name: macBinaries
+      - uses: actions/download-artifact@v1
+        with:
+          name: macBinaries
 
       - name: Install Neko using snapshot from S3 (Windows)
         if: startsWith(env.PLATFORM, 'windows')
@@ -279,7 +813,7 @@ jobs:
         run: |
           $DOWNLOADDIR="./temp"
           new-item -Name $DOWNLOADDIR -ItemType directory
-          Invoke-WebRequest https://build.haxe.org/builds/neko/$PLATFORM/neko_latest.zip -OutFile $DOWNLOADDIR/neko_latest.zip
+          Invoke-WebRequest https://build.haxe.org/builds/neko/$env:PLATFORM/neko_latest.zip -OutFile $DOWNLOADDIR/neko_latest.zip
           Expand-Archive $DOWNLOADDIR/neko_latest.zip -DestinationPath $DOWNLOADDIR
           $NEKOPATH = Get-ChildItem $DOWNLOADDIR/neko-*-*
           Write-Host "::add-path::$NEKOPATH"
@@ -327,14 +861,14 @@ jobs:
         run: neko -version 2>&1
       
       
-
       - name: Setup Haxe
         run: |
-          curl -sSL https://build.haxe.org/builds/haxe/mac/haxe_latest.tar.gz -o ./haxe_latest.tar.gz
-          tar -xf ./haxe_latest.tar.gz -C ./
-          find . -depth -type d -name 'haxe_*' -exec mv {} macBinaries \;
+          # curl -sSL https://build.haxe.org/builds/haxe/mac/haxe_latest.tar.gz -o ./haxe_latest.tar.gz
+          # tar -xf ./haxe_latest.tar.gz -C ./
+          # find . -depth -type d -name 'haxe_*' -exec mv {} macBinaries \;
       
           set -ex
+          chmod -R a+x `pwd`/macBinaries
           sudo mkdir -p /usr/local/bin/
           sudo mkdir -p /usr/local/share/haxe/
           sudo ln -s `pwd`/macBinaries/haxe /usr/local/bin/haxe
@@ -356,9 +890,10 @@ jobs:
         run: brew install ${{matrix.BREW_PACKAGES}}
       
       - name: Test
-        run: haxe RunCi.hxml
+        run: |
+          # LC_CTYPE=C
+          # LANG=C
+          haxe RunCi.hxml
         working-directory: ${{github.workspace}}/tests
       
       
-
-
