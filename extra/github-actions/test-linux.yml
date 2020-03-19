@@ -4,8 +4,11 @@
     # tar -xf ./haxe_latest.tar.gz -C ./
     # find . -depth -type d -name 'haxe_*' -exec mv {} linuxBinaries \;
 
+    sudo apt install libmbedtls-dev
+
     set -ex
-    chmod -R a+x `pwd`/linuxBinaries
+    # chmod -R a+x `pwd`/linuxBinaries
+    tar -xf linuxBinaries/*_bin.tar.gz -C linuxBinaries --strip-components=1
     sudo mkdir -p /usr/local/bin/
     sudo mkdir -p /usr/local/share/haxe/
     sudo ln -s `pwd`/linuxBinaries/haxe /usr/local/bin/haxe

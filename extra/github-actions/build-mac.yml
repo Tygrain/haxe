@@ -8,10 +8,10 @@
 - name: Install OCaml libraries
   run: |
     set -ex
-    opam init --yes --disable-sandboxing
+    opam init # --disable-sandboxing
     opam update
     opam pin add haxe . --no-action
-    opam install haxe --deps-only --yes
+    opam install haxe --deps-only
     opam list
     ocamlopt -v
 

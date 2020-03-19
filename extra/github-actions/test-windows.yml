@@ -1,30 +1,69 @@
 # - name: Quick test
 #   run: |
-#     curl -sSL https://build.haxe.org/builds/haxe/windows64/haxe_latest.zip -o ./haxe_latest.zip
-#     unzip -qq ./haxe_latest.zip
+#     ls
+#     mkdir win64Binaries
+#     curl -sSL https://build.haxe.org/builds/haxe/windows64/haxe_latest.zip -o ./win64Binaries/haxe_latest.zip
+#     # unzip -qq ./win64Binaries/haxe_latest.zip -d ./win64Binaries/
+#     mv ./win64Binaries/haxe_latest.zip ./win64Binaries/haxe_bin.zip
 # - shell: pwsh
 #   run: |
-#     $dir = Get-ChildItem ./haxe_*_* -Name -Directory
-#     Rename-Item ./$dir haxe
+#     $name = Get-ChildItem ./haxe_*_* -Name
+#     Rename-Item ./$name haxe_bin.zip
+
+- name: Quick test
+  shell: bash
+  run: |
+    mkdir win64Binaries
+    curl -sSL https://build.haxe.org/builds/haxe/windows64/haxe_latest.zip -o ./win64Binaries/haxe_bin.zip
 
 - name: Setup Haxe
-  shell: pwsh
+  shell: bash
   run: |
-    Set-PSDebug -Trace 2
-    $dir = '' + ( get-location ) + "/win$($env:ARCH)Binaries"
-    echo "$dir"
-    dir $dir
-    Set-PSDebug -Trace 0
-    $env:PATH = "$dir;$env:PATH"
-    Write-Host "::add-path::$dir"
+    set -ex
+    unzip -qq ./win64Binaries/haxe_bin.zip -d ./win64Binaries/
+    # mv ./win64Binaries/haxe_latest.zip ./win64Binaries/haxe_bin.zip
+    HAXEPATH=`echo $PWD/win64Binaries/haxe_*_*`
+    HAXEPATH="$HAXEPATH" | sed 's/\//\\/g'
+    # HAXEPATH2=`echo $PWD/`
+    # ls $HAXEPATH
+    # set PATH="$HAXEPATH:$PATH"
+    # set PATH="$HAXEPATH2:$PATH"
+    echo "::add-path::$HAXEPATH"
+    # echo "::add-path::$HAXEPATH2"
+
+# - name: Setup Haxe
+#   shell: pwsh
+#   run: |
+#     Set-PSDebug -Trace 1
+#     new-item -Name "win64Binaries" -ItemType directory
+#     Invoke-WebRequest https://build.haxe.org/builds/haxe/windows64/haxe_latest.zip -OutFile ./win64Binaries/haxe_bin.zip
+
+#     Set-PSDebug -Trace 1
+#     7z x ./win$($env:ARCH)Binaries/*_bin.zip -owin$($env:ARCH)Binaries
+#     $folder = Get-ChildItem ./win$($env:ARCH)Binaries/haxe_*_* -Name -Directory
+#     echo "$folder"
+#     Rename-Item ./win$($env:ARCH)Binaries/$folder haxe
+#     $folder = '' + ( get-location ) + "\win$($env:ARCH)Binaries\haxe"
+
+#     echo "$folder"
+#     dir "./win$($env:ARCH)Binaries"
+#     dir "./win$($env:ARCH)Binaries\haxe"
+#     dir '' + ( get-location ) + "\win$($env:ARCH)Binaries"
+#     dir '' + ( get-location ) + "\win$($env:ARCH)Binaries\haxe"
+#     dir $folder
+#     # Set-PSDebug -Trace 0
+#     # $env:PATH = "$folder;$env:PATH"
+#     # echo "::set-env name=HAXEPATH::$folder"
+#     echo "::add-path::$folder"
 
 - name: Print Haxe version
-  shell: pwsh
+  shell: bash
   run: haxe -version
 
 - name: "Make Python 3 be available as python3 in the cmdline"
   shell: pwsh
   run: |
+    echo "$env:PATH"
     Set-PSDebug -Trace 1
     $pypath = python -c "import sys; print(sys.executable)"
     $py3path = $pypath.replace("python.exe","python3.exe")
@@ -34,10 +73,12 @@
 - name: Setup haxelib
   shell: pwsh
   run: |
-    mkdir "$($env:HAXELIB_ROOT)"
-    haxelib setup "$($env:HAXELIB_ROOT)"
+    mkdir "$(HAXELIB_ROOT)"
+    haxelib setup "$(HAXELIB_ROOT)"
 
 - name: Test
   shell: pwsh
-  run: haxe RunCi.hxml
+  run: |
+    echo "$(PATH)"
+    haxe RunCi.hxml
   working-directory: ${{github.workspace}}/tests
