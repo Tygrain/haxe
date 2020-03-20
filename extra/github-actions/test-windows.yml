@@ -20,9 +20,7 @@
   shell: cmd
   run: |
     busybox64.exe sh -c "set -ex; mkdir tmp; wget http://build.haxe.org/builds/haxe/windows64/haxe_latest.zip -P tmp; unzip tmp/haxe_latest.zip && mv haxe_* win64Binaries"
-    busybox64.exe sh -c "export PATH=`pwd`win64Binaries;$PATH"
-    busybox64.exe sh -c "echo $PATH"
-
+    set PATH=%cd%\win64Binaries;%PATH%
 - name: Print Haxe version
   shell: cmd
   run: |
