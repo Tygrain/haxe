@@ -93,32 +93,32 @@ jobs:
       @import install-neko.yml
       @import test-windows.yml
 
-  windows-test:
-    # needs: windows-build
-    runs-on: windows-latest
-    if: false
-    env:
-      PLATFORM: windows
-      TEST: ${{matrix.target}}
-      HXCPP_COMPILE_CACHE: ~/hxcache
-      ARCH: 32
-      HAXELIB_ROOT: C:/haxelib
-    strategy:
-      fail-fast: false
-      matrix:
-        # TODO. Lua/flash has never been enabled on our AppVeyor builds.
-        # jvm: https://github.com/HaxeFoundation/haxe/issues/8601
-        target: [macro, js, hl, cpp, java, cs, php, python, neko]
-    steps:
-      - uses: actions/checkout@master
-        with:
-          submodules: recursive
-      - uses: actions/download-artifact@v1
-        with:
-          name: win${{env.ARCH}}Binaries
+  # windows-test:
+  #   # needs: windows-build
+  #   runs-on: windows-latest
+  #   if: false
+  #   env:
+  #     PLATFORM: windows
+  #     TEST: ${{matrix.target}}
+  #     HXCPP_COMPILE_CACHE: ~/hxcache
+  #     ARCH: 32
+  #     HAXELIB_ROOT: C:/haxelib
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       # TODO. Lua/flash has never been enabled on our AppVeyor builds.
+  #       # jvm: https://github.com/HaxeFoundation/haxe/issues/8601
+  #       target: [macro, js, hl, cpp, java, cs, php, python, neko]
+  #   steps:
+  #     - uses: actions/checkout@master
+  #       with:
+  #         submodules: recursive
+  #     - uses: actions/download-artifact@v1
+  #       with:
+  #         name: win${{env.ARCH}}Binaries
 
-      @import install-neko.yml
-      @import test-windows.yml
+  #     @import install-neko.yml
+  #     @import test-windows.yml
 
   # linux-test:
   #   needs: linux-build
