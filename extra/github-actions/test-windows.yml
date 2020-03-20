@@ -11,54 +11,24 @@
 #     Rename-Item ./$name haxe_bin.zip
 
 - name: Quick test
-  shell: bash
+  shell: pwsh
   run: |
-    mkdir win64Binaries
-    curl -sSL https://build.haxe.org/builds/haxe/windows64/haxe_latest.zip -o ./win64Binaries/haxe_bin.zip
+    curl -sSL https://frippery.org/files/busybox/busybox64.exe -o busybox64.exe
+
 
 - name: Setup Haxe
-  shell: bash
+  shell: cmd
   run: |
-    set -ex
-    unzip -qq ./win64Binaries/haxe_bin.zip -d ./win64Binaries/
-    # mv ./win64Binaries/haxe_latest.zip ./win64Binaries/haxe_bin.zip
-    HAXEPATH=`echo $PWD/win64Binaries/haxe_*_*`
-    HAXEPATH="$HAXEPATH" | sed 's/\//\\/g'
-    # HAXEPATH2=`echo $PWD/`
-    # ls $HAXEPATH
-    # set PATH="$HAXEPATH:$PATH"
-    # set PATH="$HAXEPATH2:$PATH"
-    echo "::add-path::$HAXEPATH"
-    # echo "::add-path::$HAXEPATH2"
-
-# - name: Setup Haxe
-#   shell: pwsh
-#   run: |
-#     Set-PSDebug -Trace 1
-#     new-item -Name "win64Binaries" -ItemType directory
-#     Invoke-WebRequest https://build.haxe.org/builds/haxe/windows64/haxe_latest.zip -OutFile ./win64Binaries/haxe_bin.zip
-
-#     Set-PSDebug -Trace 1
-#     7z x ./win$($env:ARCH)Binaries/*_bin.zip -owin$($env:ARCH)Binaries
-#     $folder = Get-ChildItem ./win$($env:ARCH)Binaries/haxe_*_* -Name -Directory
-#     echo "$folder"
-#     Rename-Item ./win$($env:ARCH)Binaries/$folder haxe
-#     $folder = '' + ( get-location ) + "\win$($env:ARCH)Binaries\haxe"
-
-#     echo "$folder"
-#     dir "./win$($env:ARCH)Binaries"
-#     dir "./win$($env:ARCH)Binaries\haxe"
-#     dir '' + ( get-location ) + "\win$($env:ARCH)Binaries"
-#     dir '' + ( get-location ) + "\win$($env:ARCH)Binaries\haxe"
-#     dir $folder
-#     # Set-PSDebug -Trace 0
-#     # $env:PATH = "$folder;$env:PATH"
-#     # echo "::set-env name=HAXEPATH::$folder"
-#     echo "::add-path::$folder"
+    busybox64.exe sh -c "set -ex; mkdir tmp; wget http://build.haxe.org/builds/haxe/windows64/haxe_latest.zip -P tmp; unzip tmp/haxe_latest.zip && mv haxe_* win64Binaries"
+    busybox64.exe sh -c "export PATH=`pwd`win64Binaries;$PATH"
+    busybox64.exe sh -c "echo $PATH"
 
 - name: Print Haxe version
-  shell: bash
-  run: haxe -version
+  shell: cmd
+  run: |
+    haxe.exe -version
+    echo %PATH%
+    echo "Все тестировщики пидеры!"
 
 - name: "Make Python 3 be available as python3 in the cmdline"
   shell: pwsh
