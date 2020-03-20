@@ -4,24 +4,134 @@ on: [push, pull_request]
 
 jobs:
 
-  # windows64-build:
-  #   runs-on: windows-latest
-  #   if: false
-  #   env:
-  #     PLATFORM: windows64
-  #     OPAMYES: 1
-  #     CYG_MIRROR: http://mirrors.kernel.org/sourceware/cygwin/
-  #     ARCH: 64
-  #     MINGW_ARCH: x86_64
-  #     CYGWIN_SETUP: https://cygwin.com/setup-x86_64.exe
-  #     CYG_ROOT: C:/cygwin64
-  #   steps:
-  #     - uses: actions/checkout@master
-  #       with:
-  #         submodules: recursive
+  windows64-build:
+    runs-on: windows-latest
+    if: false
+    env:
+      PLATFORM: windows64
+      OPAMYES: 1
+      CYG_MIRROR: http://mirrors.kernel.org/sourceware/cygwin/
+      ARCH: 64
+      MINGW_ARCH: x86_64
+      CYGWIN_SETUP: https://cygwin.com/setup-x86_64.exe
+      CYG_ROOT: C:/cygwin64
+    steps:
+      - uses: actions/checkout@master
+        with:
+          submodules: recursive
 
-  #     @import install-neko.yml
-  #     @import build-windows.yml
+      - name: Install Neko using snapshot from S3 (Windows)
+        if: startsWith(env.PLATFORM, 'windows')
+        shell: pwsh
+        run: |
+          $DOWNLOADDIR="./temp"
+          new-item -Name $DOWNLOADDIR -ItemType directory
+          Invoke-WebRequest https://build.haxe.org/builds/neko/$env:PLATFORM/neko_latest.zip -OutFile $DOWNLOADDIR/neko_latest.zip
+          Expand-Archive $DOWNLOADDIR/neko_latest.zip -DestinationPath $DOWNLOADDIR
+          $NEKOPATH = Get-ChildItem $DOWNLOADDIR/neko-*-*
+          Write-Host "::add-path::$NEKOPATH"
+          Write-Host "::set-env name=NEKOPATH::$NEKOPATH"
+      
+      - name: Install Neko using snapshot from S3 (Unix)
+        # if: (!startsWith(env.PLATFORM, 'windows'))
+        if: (startsWith(env.PLATFORM, 'linux'))
+        run: |
+          set -ex
+          sudo add-apt-repository ppa:haxe/snapshots -y
+          sudo apt-get update -qqy
+          sudo apt-get install -qqy neko
+      
+          # DOWNLOADDIR="./temp"
+          # mkdir $DOWNLOADDIR
+          # curl -sSL https://build.haxe.org/builds/neko/$PLATFORM/neko_latest.tar.gz -o $DOWNLOADDIR/neko_latest.tar.gz
+          # tar -xf $DOWNLOADDIR/neko_latest.tar.gz -C $DOWNLOADDIR
+          # NEKOPATH=`echo $DOWNLOADDIR/neko-*-*`
+          # sudo mkdir -p /usr/local/bin
+          # sudo mkdir -p /usr/local/lib/neko
+          # sudo ln -s $NEKOPATH/{neko,nekoc,nekoml,nekotools}  /usr/local/bin/
+          # sudo ln -s $NEKOPATH/libneko.*                      /usr/local/lib/
+          # sudo ln -s $NEKOPATH/*.ndll                         /usr/local/lib/neko/
+          # sudo ln -s $NEKOPATH/nekoml.std                     /usr/local/lib/neko/
+          # sudo ln -s $NEKOPATH/include/*.h                    /usr/local/include/
+          # set +x
+          # echo ::add-path::$NEKOPATH
+          # echo ::set-env name=NEKOPATH::$NEKOPATH
+      
+      - name: Install Neko using snapshot from S3 (Mac)
+        if: (startsWith(env.PLATFORM, 'mac'))
+        run: |
+          set -ex
+          HOMEBREW_NO_AUTO_UPDATE=1
+          brew install neko
+      
+      - name: ldconfig
+        if: env.PLATFORM == 'linux64'
+        run: |
+          sudo ldconfig
+          sudo ldconfig /usr/local/lib
+      
+      - name: Print Neko version
+        run: neko -version 2>&1
+      
+      
+      - name: choco install nsis
+        shell: pwsh
+        run: choco install --no-progress nsis.portable --version 3.02 -y
+      - name: choco install things
+        shell: pwsh
+        run: choco install --no-progress curl wget 7zip.portable -y
+      - name: Prepend Chocolatey path
+        shell: pwsh
+        run: Write-Host "::add-path::C:\ProgramData\chocolatey\bin"
+      
+      - name: Install OCaml and OCaml libraries
+        shell: pwsh
+        run: |
+          Set-PSDebug -Trace 1
+          curl.exe -fsSL -o cygwin-setup.exe --retry 3 $($env:CYGWIN_SETUP)
+          Start-Process -FilePath "cygwin-setup.exe" -ArgumentList "-B -q -R $($env:CYG_ROOT) -l C:/tmp -s $($env:CYG_MIRROR) -P default -P make -P git -P zlib-devel -P rsync -P patch -P diffutils -P curl -P unzip -P tar -P m4 -P perl -P libpcre-devel -P mbedtls-devel -P mingw64-$($env:MINGW_ARCH)-zlib -P mingw64-$($env:MINGW_ARCH)-gcc-core -P mingw64-$($env:MINGW_ARCH)-pcre" -Wait
+          curl.exe -fsSL -o "opam.tar.xz" --retry 3 https://github.com/fdopen/opam-repository-mingw/releases/download/0.0.0.2/opam$($env:ARCH).tar.xz
+          curl.exe -fsSL -o "libmbedtls.tar.xz" --retry 3 https://github.com/Simn/mingw64-mbedtls/releases/download/2.16.3/mingw64-$($env:MINGW_ARCH)-mbedtls-2.16.3-1.tar.xz
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'echo "$OLDPWD"')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && tar -C / -xvf libmbedtls.tar.xz')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && tar -xf opam.tar.xz')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && bash opam${ARCH}/install.sh')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'opam init mingw "https://github.com/fdopen/opam-repository-mingw.git#opam2" --comp 4.07.0+mingw${ARCH}c --switch 4.07.0+mingw${ARCH}c --auto-setup --yes 2>&1')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'opam update --yes 2>&1')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && opam pin add haxe . --kind=path --no-action --yes 2>&1')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'opam install haxe --deps-only --yes 2>&1')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'opam list')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'ocamlopt -v')
+      
+      - name: Expose mingw dll files
+        shell: pwsh
+        run: Write-Host "::add-path::${env:CYG_ROOT}/usr/$($env:MINGW_ARCH)-w64-mingw32/sys-root/mingw/bin"
+      
+      - name: Build Haxe
+        shell: pwsh
+        run: |
+          Set-PSDebug -Trace 1
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && opam config exec -- make -s -f Makefile.win -j`nproc` haxe 2>&1')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && opam config exec -- make -s -f Makefile.win haxelib 2>&1')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && opam config exec -- make -f Makefile.win echo_package_files package_bin package_installer_win package_choco 2>&1')
+          dir out
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && cygcheck ./haxe.exe')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && cygcheck ./haxelib.exe')
+      
+      - name: Move haxe binaries
+        shell: pwsh
+        run: |
+          # & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && mkdir ./out')
+          & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && ls ./out')
+          # & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && mv ./haxe.exe ./out')
+          # & "$($env:CYG_ROOT)/bin/bash.exe" @('-lc', 'cd "$OLDPWD" && mv ./haxelib.exe ./out')
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v1.0.0
+        with:
+          name: win${{env.ARCH}}Binaries
+          path: out
+      
 
   # windows-build:
   #   runs-on: windows-latest
@@ -232,7 +342,7 @@ jobs:
       
 
   windows-test:
-    needs: windows-build
+    # needs: windows-build
     runs-on: windows-latest
     if: false
     env:

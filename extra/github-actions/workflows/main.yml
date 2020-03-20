@@ -3,24 +3,24 @@ on: [push, pull_request]
 
 jobs:
 
-  # windows64-build:
-  #   runs-on: windows-latest
-  #   if: false
-  #   env:
-  #     PLATFORM: windows64
-  #     OPAMYES: 1
-  #     CYG_MIRROR: http://mirrors.kernel.org/sourceware/cygwin/
-  #     ARCH: 64
-  #     MINGW_ARCH: x86_64
-  #     CYGWIN_SETUP: https://cygwin.com/setup-x86_64.exe
-  #     CYG_ROOT: C:/cygwin64
-  #   steps:
-  #     - uses: actions/checkout@master
-  #       with:
-  #         submodules: recursive
+  windows64-build:
+    runs-on: windows-latest
+    if: false
+    env:
+      PLATFORM: windows64
+      OPAMYES: 1
+      CYG_MIRROR: http://mirrors.kernel.org/sourceware/cygwin/
+      ARCH: 64
+      MINGW_ARCH: x86_64
+      CYGWIN_SETUP: https://cygwin.com/setup-x86_64.exe
+      CYG_ROOT: C:/cygwin64
+    steps:
+      - uses: actions/checkout@master
+        with:
+          submodules: recursive
 
-  #     @import install-neko.yml
-  #     @import build-windows.yml
+      @import install-neko.yml
+      @import build-windows.yml
 
   # windows-build:
   #   runs-on: windows-latest
@@ -94,7 +94,7 @@ jobs:
       @import test-windows.yml
 
   windows-test:
-    needs: windows-build
+    # needs: windows-build
     runs-on: windows-latest
     if: false
     env:
