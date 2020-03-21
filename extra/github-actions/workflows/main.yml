@@ -93,7 +93,7 @@ jobs:
       #   with:
       #     name: win${{env.ARCH}}Binaries
 
-      @import install-neko.yml
+      # @import install-neko.yml
       @import test-windows.yml
 
   # windows-test:
