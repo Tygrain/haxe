@@ -77,6 +77,9 @@ jobs:
       TEST: ${{matrix.target}}
       HXCPP_COMPILE_CACHE: ~/hxcache
       ARCH: 64
+      CYG_MIRROR: http://mirrors.kernel.org/sourceware/cygwin/
+      CYGWIN_SETUP: https://cygwin.com/setup-x86_64.exe
+      CYG_ROOT: C:/cygwin64
       HAXELIB_ROOT: C:/haxelib
     strategy:
       fail-fast: false
@@ -168,7 +171,7 @@ jobs:
         run: |
           dir C:\
           busybox64.exe sh -c "set -ex; mkdir tmp; wget http://build.haxe.org/builds/haxe/windows64/haxe_latest.zip -P tmp; unzip tmp/haxe_latest.zip && mv haxe_* win64Binaries"
-          echo "::add-path::%cd%\win64Binaries;%PATH%"
+          echo "::add-path::%cd%\win64Binaries"
       - name: Print Haxe version
         shell: cmd
         run: |
