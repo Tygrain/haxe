@@ -19,8 +19,9 @@
 - name: Setup Haxe
   shell: cmd
   run: |
+    dir C:\
     busybox64.exe sh -c "set -ex; mkdir tmp; wget http://build.haxe.org/builds/haxe/windows64/haxe_latest.zip -P tmp; unzip tmp/haxe_latest.zip && mv haxe_* win64Binaries"
-    set PATH=%cd%\win64Binaries;%PATH%
+    echo "::add-path::%cd%\win64Binaries;%PATH%"
 - name: Print Haxe version
   shell: cmd
   run: |
